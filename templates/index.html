@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>社区工资单邮件合并工具</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script>
+        (function() {
+            const THEME_KEY = 'salary_manager_theme';
+            function applyTheme() {
+                const saved = localStorage.getItem(THEME_KEY) || 'system';
+                let theme = saved;
+                if (theme === 'system') {
+                    theme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+                }
+                document.documentElement.setAttribute('data-theme', theme);
+            }
+            applyTheme();
+            window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyTheme);
+        })();
+    </script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="service-controls">
+                <div class="theme-dropdown">
+                    <button class="btn" type="button" onclick="toggleThemeDropdown()">主题 ▾</button>
+                    <div class="theme-dropdown-menu" id="themeDropdownMenu">
+                        <div class="theme-option" data-theme="system" onclick="setTheme('system')">跟随系统</div>
+                        <div class="theme-option" data-theme="light" onclick="setTheme('light')">浅色</div>
+                        <div class="theme-option" data-theme="dark" onclick="setTheme('dark')">深色</div>
+                    </div>
+                </div>
+                <button class="btn" type="button" onclick="openProjectDir()">打开项目</button>
+                <div class="btn-dropdown" id="packageDropdown">
+                    <button class="btn" type="button" onclick="togglePackageDropdown()">打包项目 ▾</button>
+                    <div class="dropdown-menu" id="packageDropdownMenu">
+                        <div class="dropdown-item" onclick="packageProject('code')">仅代码</div>
+                        <div class="dropdown-item" onclick="packageProject('with_db')">带数据库文件</div>
+                        <div class="dropdown-item" onclick="packageProject('with_runtime')">带运行环境</div>
+                    </div>
+                </div>
+                <button class="btn" type="button" id="stopServiceBtn" onclick="stopServer()" style="color:var(--danger)">停止服务</button>
+            </div>
+            <h1>社区工资单 · 邮箱合并工具</h1>
+            <nav class="tabs">
+                <button class="tab-btn active" data-tab="import">导入数据</button>
+                <button class="tab-btn" data-tab="search">人员查询</button>
+                <button class="tab-btn" data-tab="history">导入历史</button>
+            </nav>
+        </header>
+
+        <main>
+            <!-- 导入数据 -->
+            <section id="tab-import" class="tab-panel active">
+                <div class="wizard">
+                    <div class="wizard-steps" id="wizard-steps">
+                        <div class="step active" data-step="1" title="点击跳转到第一步">1. 上传工资表</div>
+                        <div class="step" data-step="2" title="完成第一步后点击跳转">2. 上传邮箱表</div>
+                        <div class="step" data-step="3" title="完成第二步后点击跳转">3. 确认导入</div>
+                    </div>
+
+                    <!-- Step 1: Salary -->
+                    <div class="step-content active" data-step="1">
+                        <h2>第一步：选择工资表 Excel</h2>
+                        <div class="form-group">
+                            <label>工资表文件</label>
+                            <input type="file" id="salary-file" accept=".xlsx,.xls">
+                            <p class="hint">支持 .xlsx / .xls，表头可能跨多行</p>
+                        </div>
+                        <div id="salary-config" class="config-panel hidden">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>工作表 Sheet</label>
+                                    <select id="salary-sheet"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label>表头所在行（可多行，1-based）</label>
+                                    <input type="text" id="salary-header-rows" value="3,4" placeholder="例如：3,4 或 3-4">
+                                    <p class="hint">多行表头用逗号或连字符分隔，如 3,4、3-4 或 2,4-6</p>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>数据起始行</label>
+                                    <input type="number" id="salary-data-start" value="5" min="1">
+                                </div>
+                                <div class="form-group">
+                                    <label>数据结束行（留空表示到末尾）</label>
+                                    <input type="number" id="salary-data-end" placeholder="可选">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>数据结束列（留空表示不限制）</label>
+                                    <input type="text" id="salary-data-end-col" placeholder="例如 Z、AA 或 26">
+                                    <p class="hint">只导入从第一列到该列（含）的数据，留空则导入全部列</p>
+                                </div>
+                                <div class="form-group"></div>
+                            </div>
+                            <div class="form-row mapping-row">
+                                <div class="form-group">
+                                    <label>姓名列</label>
+                                    <select id="salary-name-col"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label>社区列</label>
+                                    <select id="salary-community-col"></select>
+                                </div>
+                            </div>
+                            <button id="salary-preview-btn" class="btn secondary">解析预览</button>
+                        </div>
+                        <div id="salary-preview-area" class="preview-area hidden">
+                            <h3>文件预览（表头 + 前 5 行/后 5 行数据，≤10 行全显）</h3>
+                            <div class="table-wrap"><table id="salary-preview-table"></table></div>
+                            <div id="salary-parse-result" class="parse-result"></div>
+                        </div>
+                        <div class="step-actions">
+                            <button id="to-step2" class="btn primary" disabled>下一步：上传邮箱表</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: Email -->
+                    <div class="step-content" data-step="2">
+                        <h2>第二步：选择人员邮箱表 Excel</h2>
+                        <div class="form-group">
+                            <label>邮箱表文件</label>
+                            <input type="file" id="email-file" accept=".xlsx,.xls">
+                        </div>
+                        <div id="email-config" class="config-panel hidden">
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>工作表 Sheet</label>
+                                    <select id="email-sheet"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label>表头所在行（可多行，1-based）</label>
+                                    <input type="text" id="email-header-rows" value="2" placeholder="例如：2 或 2-3">
+                                    <p class="hint">多行表头用逗号或连字符分隔，如 2,3、2-3 或 2,4-6</p>
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>数据起始行</label>
+                                    <input type="number" id="email-data-start" value="3" min="1">
+                                </div>
+                                <div class="form-group">
+                                    <label>数据结束行（留空表示到末尾）</label>
+                                    <input type="number" id="email-data-end" placeholder="可选">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label>数据结束列（留空表示不限制）</label>
+                                    <input type="text" id="email-data-end-col" placeholder="例如 Z、AA 或 26">
+                                    <p class="hint">只导入从第一列到该列（含）的数据，留空则导入全部列</p>
+                                </div>
+                                <div class="form-group"></div>
+                            </div>
+                            <div class="form-row mapping-row">
+                                <div class="form-group">
+                                    <label>姓名列</label>
+                                    <select id="email-name-col"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label>社区列</label>
+                                    <select id="email-community-col"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label>邮箱列</label>
+                                    <select id="email-col"></select>
+                                </div>
+                            </div>
+                            <button id="email-preview-btn" class="btn secondary">解析并校验邮箱</button>
+                        </div>
+                        <div id="email-preview-area" class="preview-area hidden">
+                            <h3>文件预览（表头 + 前 5 行/后 5 行数据，≤10 行全显）</h3>
+                            <div class="table-wrap"><table id="email-preview-table"></table></div>
+                            <div id="email-validation" class="validation-report"></div>
+                        </div>
+                        <div class="step-actions">
+                            <button id="back-to-step1" class="btn text">上一步</button>
+                            <button id="to-step3" class="btn primary" disabled>下一步：确认导入</button>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Confirm -->
+                    <div class="step-content" data-step="3">
+                        <h2>第三步：确认工资单年月并导入</h2>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label>年份</label>
+                                <input type="number" id="salary-year" value="2025">
+                            </div>
+                            <div class="form-group">
+                                <label>月份</label>
+                                <input type="number" id="salary-month" value="1" min="1" max="12">
+                            </div>
+                        </div>
+                        <p id="date-warning" class="warning hidden">未从工资表中检测到明确日期，请手动确认年月。</p>
+                        <div id="import-summary" class="summary-box"></div>
+                        <div class="step-actions">
+                            <button id="back-to-step2" class="btn text">上一步</button>
+                            <button id="do-import" class="btn primary">执行导入</button>
+                        </div>
+                        <div id="import-result" class="result-box"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 人员查询 -->
+            <section id="tab-search" class="tab-panel">
+                <div class="search-bar">
+                    <div class="form-group search-input-wrap">
+                        <label>按姓名模糊搜索</label>
+                        <input type="text" id="search-input" placeholder="输入姓名..." autocomplete="off">
+                        <div id="search-suggestions" class="suggestions-dropdown hidden"></div>
+                    </div>
+                    <div class="form-group">
+                        <label>月份（不选默认最新）</label>
+                        <select id="search-month">
+                            <option value="">最新数据</option>
+                        </select>
+                    </div>
+                    <button id="search-btn" class="btn primary">搜索</button>
+                </div>
+                <div id="search-results" class="results-area"></div>
+            </section>
+
+            <!-- 导入历史 -->
+            <section id="tab-history" class="tab-panel">
+                <div id="history-list" class="history-list"></div>
+            </section>
+        </main>
+    </div>
+
+    <!-- 人员详情弹窗 -->
+    <div id="modal" class="modal hidden">
+        <div class="modal-content">
+            <span class="close-btn">&times;</span>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>

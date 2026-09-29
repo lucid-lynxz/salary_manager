@@ -1,0 +1,13 @@
+venv/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+uploads/
+packages/
+salary.db
+app.log
+.app.pid
+.DS_Store
+*.xlsx
+.idea
