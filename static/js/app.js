@@ -1,6 +1,6 @@
 // State
 const state = {
-    salary: { fileId: null, filename: null, config: null, parsed: null, preview: null, previewRowIndices: [], mapping: null, validationState: null, overrides: {} },
+    salary: { fileId: null, filename: null, config: null, parsed: null, preview: null, previewRowIndices: [], mapping: null, validationState: null, overrides: {}, fullPreview: false },
     email: { fileId: null, filename: null, config: null, parsed: null, preview: null, previewRowIndices: [], mapping: null, overrides: {}, overrideLog: {}, validationState: null },
     currentStep: 1,
     unlockedSteps: { 1: true },
@@ -29,10 +29,11 @@ async function postJson(url, body) {
     return await res.json();
 }
 
-async function uploadFile(file, fileType) {
+async function uploadFile(file, fileType, fullPreview = false) {
     const fd = new FormData();
     fd.append('file', file);
     fd.append('file_type', fileType);
+    if (fullPreview) fd.append('full_preview', 'true');
     const res = await fetch('/api/preview', { method: 'POST', body: fd });
     if (!res.ok) {
         const text = await res.text();
@@ -297,6 +298,14 @@ function renderEmailPreview() {
 
 function populateSelect(selectEl, headers, selectedIndex) {
     selectEl.innerHTML = '';
+    // 添加空选项，支持"未选择"
+    if (selectedIndex === -1 || selectedIndex === null || selectedIndex === undefined) {
+        const emptyOpt = document.createElement('option');
+        emptyOpt.value = '';
+        emptyOpt.textContent = '未选择';
+        emptyOpt.selected = true;
+        selectEl.appendChild(emptyOpt);
+    }
     headers.forEach((h, i) => {
         const opt = document.createElement('option');
         opt.value = i;
@@ -360,7 +369,7 @@ $('#salary-file').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
     try {
-        const data = await uploadFile(file, 'salary');
+        const data = await uploadFile(file, 'salary', state.salary.fullPreview);
         if (data.error) { alert(data.error); return; }
         state.salary.fileId = data.file_id;
         state.salary.filename = data.filename;
@@ -403,6 +412,7 @@ $('#salary-sheet').addEventListener('change', async () => {
             file_id: state.salary.fileId,
             sheet_name: $('#salary-sheet').value,
             file_type: 'salary',
+            full_preview: state.salary.fullPreview,
         });
         if (data.error) { alert(data.error); return; }
         state.salary.sheetData = data;
@@ -418,6 +428,28 @@ $('#salary-sheet').addEventListener('change', async () => {
 });
 
 $('#salary-preview-btn').addEventListener('click', parseSalary);
+
+$('#salary-full-preview-btn').addEventListener('click', async () => {
+    const btn = $('#salary-full-preview-btn');
+    state.salary.fullPreview = !state.salary.fullPreview;
+    btn.classList.toggle('active', state.salary.fullPreview);
+    if (!state.salary.fileId) return;
+    try {
+        const data = await postJson('/api/sheet-preview', {
+            file_id: state.salary.fileId,
+            sheet_name: $('#salary-sheet').value,
+            file_type: 'salary',
+            full_preview: state.salary.fullPreview,
+        });
+        if (data.error) { alert(data.error); return; }
+        state.salary.preview = data.preview;
+        state.salary.previewRowIndices = data.preview_row_indices || [];
+        renderSalaryPreview();
+    } catch (err) {
+        console.error(err);
+        alert('刷新预览失败：' + err.message);
+    }
+});
 
 function updateDataStartFromHeaders(headerInputId, dataStartId) {
     const headerRows = parseHeaderRows($(headerInputId).value);
@@ -448,6 +480,12 @@ async function parseSalary() {
         const dataEndCol = $('#salary-data-end-col').value.trim() || null;
         const skipRows = parseHeaderRows($('#salary-skip-rows').value);
 
+        const salaryFieldMapping = {
+            gross_salary: $('#salary-gross-col').value,
+            total_deduction: $('#salary-deduction-col').value,
+            net_salary: $('#salary-net-col').value,
+        };
+
         const body = {
             file_id: state.salary.fileId,
             sheet_name: $('#salary-sheet').value,
@@ -457,6 +495,7 @@ async function parseSalary() {
             data_end_row: dataEnd,
             data_end_col: dataEndCol,
             skip_rows: skipRows,
+            salary_field_mapping: salaryFieldMapping,
         };
         const res = await postJson('/api/parse-config', body);
         if (res.error) { alert(res.error); return; }
@@ -467,6 +506,15 @@ async function parseSalary() {
         state.salary.mapping = mapping;
         populateSelect($('#salary-name-col'), headers, mapping.name ?? -1);
         populateSelect($('#salary-community-col'), headers, mapping.community ?? -1);
+
+        // 填充工资字段列下拉框，优先使用用户已选值，其次用后端自动检测值
+        const detected = res.detected_salary_fields || {};
+        const grossSel = $('#salary-gross-col').value;
+        const dedSel = $('#salary-deduction-col').value;
+        const netSel = $('#salary-net-col').value;
+        populateSelect($('#salary-gross-col'), headers, grossSel !== '' ? parseInt(grossSel) : (detected.gross_salary ?? -1));
+        populateSelect($('#salary-deduction-col'), headers, dedSel !== '' ? parseInt(dedSel) : (detected.total_deduction ?? -1));
+        populateSelect($('#salary-net-col'), headers, netSel !== '' ? parseInt(netSel) : (detected.net_salary ?? -1));
 
         const resultEl = $('#salary-parse-result');
         let resultHtml = `
@@ -1385,6 +1433,11 @@ $('#do-import').addEventListener('click', async () => {
         name: parseInt($('#salary-name-col').value),
         community: parseInt($('#salary-community-col').value),
     };
+    const salaryFieldMapping = {
+        gross_salary: $('#salary-gross-col').value,
+        total_deduction: $('#salary-deduction-col').value,
+        net_salary: $('#salary-net-col').value,
+    };
     const emailMapping = {
         name: parseInt($('#email-name-col').value),
         community: parseInt($('#email-community-col').value),
@@ -1403,6 +1456,7 @@ $('#do-import').addEventListener('click', async () => {
             data_end_col: $('#salary-data-end-col').value.trim() || null,
             skip_rows: parseHeaderRows($('#salary-skip-rows').value),
             mapping: salaryMapping,
+            salary_field_mapping: salaryFieldMapping,
             overrides: state.salary.overrides,
         },
         email: {

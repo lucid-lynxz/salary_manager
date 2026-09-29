@@ -181,6 +181,16 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .btn.secondary:hover { background: #d1d5db; }
 .btn.text { background: transparent; color: var(--muted); }
 .btn.danger { background: var(--danger); color: #fff; }
+.btn.toggle { background: #e5e7eb; color: var(--text); }
+.btn.toggle.active { background: var(--primary); color: #fff; }
+.btn.toggle.active:hover { background: var(--primary-dark); }
+
+.action-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 16px;
+}
 
 .step-actions {
     display: flex;

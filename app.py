@@ -410,9 +410,21 @@ def get_previous_accounts():
     return {(r["community"], r["name"]): (r["bank_account"] or "") for r in rows}
 
 
-def validate_salary_records(records, headers):
-    """对工资记录做校验，返回 validation dict。"""
-    field_indexes = detect_salary_fields(headers)
+def validate_salary_records(records, headers, field_indexes_override=None):
+    """对工资记录做校验，返回 validation dict。
+    field_indexes_override: 用户手动指定的列索引，若提供则优先使用，否则自动检测。
+    """
+    field_indexes = {}
+    if field_indexes_override:
+        for k, v in field_indexes_override.items():
+            if v is not None and v != "":
+                try:
+                    field_indexes[k] = int(v)
+                except (TypeError, ValueError):
+                    pass
+    # 若用户未提供有效列索引，则回退到自动检测
+    if not field_indexes:
+        field_indexes = detect_salary_fields(headers)
     has_account = "bank_account" in field_indexes
     has_gross = "gross_salary" in field_indexes
     has_deduction = "total_deduction" in field_indexes
@@ -541,8 +553,9 @@ def validate_salary_records(records, headers):
     }
 
 
-def build_preview_rows(df, detected_header, head_data=5, tail_data=5, threshold=10):
+def build_preview_rows(df, detected_header, head_data=5, tail_data=5, threshold=10, full_preview=False):
     """构造预览行：表头 + 前 N 条数据 + 后 N 条数据；数据 ≤ threshold 则全显。
+    当 full_preview=True 时返回全部行。
     当需要折叠时，中间插入一个省略标记行。
     返回 (preview_rows, row_indices)，row_indices 对应 Excel 行号（1-based），省略行为 None。
     """
@@ -558,7 +571,7 @@ def build_preview_rows(df, detected_header, head_data=5, tail_data=5, threshold=
         preview.append(row_values(i))
         row_indices.append(i + 1)
 
-    if data_count <= threshold:
+    if full_preview or data_count <= threshold:
         for i in range(header_count, len(df)):
             preview.append(row_values(i))
             row_indices.append(i + 1)
@@ -601,7 +614,8 @@ def api_preview():
         file_type = request.form.get("file_type", "salary")
         required = ["姓名", "社区"] if file_type == "salary" else ["姓名", "社区", "邮箱"]
         detected_header = detect_header_row(df, required)
-        preview, preview_row_indices = build_preview_rows(df, detected_header, head_data=5, tail_data=5, threshold=10)
+        full_preview = request.form.get("full_preview", "false").lower() in ("true", "1", "yes")
+        preview, preview_row_indices = build_preview_rows(df, detected_header, head_data=5, tail_data=5, threshold=10, full_preview=full_preview)
         detected_year, detected_month = None, None
         if file_type == "salary":
             detected_year, detected_month = extract_salary_date(df)
@@ -639,7 +653,8 @@ def api_sheet_preview():
         df = read_excel_raw(path, sheet_name)
         required = ["姓名", "社区"] if file_type == "salary" else ["姓名", "社区", "邮箱"]
         detected_header = detect_header_row(df, required)
-        preview, preview_row_indices = build_preview_rows(df, detected_header, head_data=5, tail_data=5, threshold=10)
+        full_preview = bool(data.get("full_preview", False))
+        preview, preview_row_indices = build_preview_rows(df, detected_header, head_data=5, tail_data=5, threshold=10, full_preview=full_preview)
         detected_year, detected_month = None, None
         if file_type == "salary":
             detected_year, detected_month = extract_salary_date(df)
@@ -670,6 +685,7 @@ def api_parse_config():
     data_end_row = data.get("data_end_row")
     data_end_col = data.get("data_end_col")
     skip_rows = data.get("skip_rows", [])
+    salary_field_mapping = data.get("salary_field_mapping") or {}
 
     if not file_id or not sheet_name:
         return jsonify({"error": "缺少参数"}), 400
@@ -764,15 +780,20 @@ def api_parse_config():
             }
 
         if file_type == "salary":
-            validation = validate_salary_records(records, headers)
+            validation = validate_salary_records(records, headers, field_indexes_override=salary_field_mapping)
 
-        return jsonify({
+        resp = {
             "headers": headers,
             "suggested_mapping": mapping,
             "record_count": len(records),
             "sample": records[:5],
             "validation": validation,
-        })
+        }
+        if file_type == "salary":
+            # 返回自动检测到的工资字段列索引，供前端预填下拉框
+            detected_indexes = detect_salary_fields(headers)
+            resp["detected_salary_fields"] = detected_indexes
+        return jsonify(resp)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
@@ -844,7 +865,17 @@ def api_import():
             sdf, s_header_rows, s_data_start, s_data_end, s_mapping, skip_rows=salary_cfg.get("skip_rows", []), is_email=False
         )
 
-        field_indexes = detect_salary_fields(salary_headers)
+        # 优先使用用户手动指定的工资字段列索引，否则自动检测
+        user_field_mapping = salary_cfg.get("salary_field_mapping") or {}
+        field_indexes = {}
+        for k, v in user_field_mapping.items():
+            if v is not None and v != "":
+                try:
+                    field_indexes[k] = int(v)
+                except (TypeError, ValueError):
+                    pass
+        if not field_indexes:
+            field_indexes = detect_salary_fields(salary_headers)
 
         salary_overrides = salary_cfg.get("overrides") or {}
 

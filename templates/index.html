@@ -108,7 +108,24 @@
                                     <input type="text" id="salary-data-end-col" placeholder="如 Z、AA">
                                 </div>
                             </div>
-                            <button id="salary-preview-btn" class="btn secondary">解析预览</button>
+                            <div class="form-row form-row-3">
+                                <div class="form-group">
+                                    <label>应发工资列</label>
+                                    <select id="salary-gross-col"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label>代扣合计列</label>
+                                    <select id="salary-deduction-col"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label>实发工资列</label>
+                                    <select id="salary-net-col"></select>
+                                </div>
+                            </div>
+                            <div class="action-row">
+                                <button id="salary-preview-btn" class="btn secondary">解析预览</button>
+                                <button id="salary-full-preview-btn" class="btn toggle" type="button">全量</button>
+                            </div>
                         </div>
                         <div id="salary-preview-area" class="preview-area hidden">
                             <h3>文件预览（表头 + 前 5 行/后 5 行数据，≤10 行全显）</h3>
