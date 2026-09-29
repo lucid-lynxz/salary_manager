@@ -19,6 +19,7 @@ app = Flask(__name__)
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 DB_PATH = BASE_DIR / "salary.db"
+USER_CONFIG_PATH = BASE_DIR / "user_config.json"
 UPLOAD_DIR.mkdir(exist_ok=True)
 
 # ---------------------------------------------------------------------------
@@ -943,6 +944,65 @@ def api_delete_import(import_id):
     with get_db() as conn:
         conn.execute("DELETE FROM salary_imports WHERE id = ?", (import_id,))
     return jsonify({"success": True})
+
+
+# ---------------------------------------------------------------------------
+# User config (personalized import defaults)
+# ---------------------------------------------------------------------------
+
+DEFAULT_USER_CONFIG = {
+    "salary": {
+        "header_rows": "3,4",
+        "data_start": "5",
+        "data_end": "",
+        "data_end_col": "",
+    },
+    "email": {
+        "header_rows": "2",
+        "data_start": "3",
+        "data_end": "",
+        "data_end_col": "",
+    },
+}
+
+
+def load_user_config():
+    if not USER_CONFIG_PATH.exists():
+        return json.loads(json.dumps(DEFAULT_USER_CONFIG))
+    try:
+        data = json.loads(USER_CONFIG_PATH.read_text(encoding="utf-8"))
+        merged = json.loads(json.dumps(DEFAULT_USER_CONFIG))
+        for section in ("salary", "email"):
+            if section in data and isinstance(data[section], dict):
+                merged[section].update(data[section])
+        return merged
+    except (json.JSONDecodeError, OSError):
+        return json.loads(json.dumps(DEFAULT_USER_CONFIG))
+
+
+def save_user_config(cfg):
+    USER_CONFIG_PATH.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+@app.route("/api/user-config", methods=["GET"])
+def api_get_user_config():
+    return jsonify(load_user_config())
+
+
+@app.route("/api/user-config", methods=["PUT"])
+def api_put_user_config():
+    data = request.get_json() or {}
+    current = load_user_config()
+    updated = {
+        "salary": {**current["salary"], **(data.get("salary") or {})},
+        "email": {**current["email"], **(data.get("email") or {})},
+    }
+    save_user_config(updated)
+    return jsonify(updated)
+
+
+if not USER_CONFIG_PATH.exists():
+    save_user_config(json.loads(json.dumps(DEFAULT_USER_CONFIG)))
 
 
 # ---------------------------------------------------------------------------

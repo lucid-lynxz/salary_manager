@@ -6,6 +6,7 @@ const state = {
     unlockedSteps: { 1: true },
     detectedYear: null,
     detectedMonth: null,
+    savedConfig: null,
 };
 
 // Utility
@@ -106,6 +107,74 @@ function formatPreviewCell(cell) {
         return cell.slice(0, 10);
     }
     return cell;
+}
+
+// ---------------------------------------------------------------------------
+// Personalized user config (localStorage + backend)
+// ---------------------------------------------------------------------------
+
+const USER_CONFIG_LS_KEY = 'salary_manager_user_config';
+let saveConfigTimer = null;
+
+function loadSavedConfig() {
+    try {
+        const raw = localStorage.getItem(USER_CONFIG_LS_KEY);
+        if (raw) state.savedConfig = JSON.parse(raw);
+    } catch (e) { /* ignore */ }
+    fetch('/api/user-config').then(r => r.json()).then(cfg => {
+        state.savedConfig = cfg;
+        localStorage.setItem(USER_CONFIG_LS_KEY, JSON.stringify(cfg));
+    }).catch(() => {});
+}
+
+function getSectionConfig(kind) {
+    const cfg = state.savedConfig || {};
+    return cfg[kind] || {};
+}
+
+function applySectionDefaults(kind, detectedHeader) {
+    const cfg = getSectionConfig(kind);
+    const prefix = kind;
+    // 优先用保存的配置
+    if (cfg.header_rows != null) {
+        $(`#${prefix}-header-rows`).value = cfg.header_rows;
+    } else if (detectedHeader !== null) {
+        $(`#${prefix}-header-rows`).value = `${detectedHeader + 1}`;
+    }
+    if (cfg.data_start != null) {
+        $(`#${prefix}-data-start`).value = cfg.data_start;
+    } else if (detectedHeader !== null) {
+        $(`#${prefix}-data-start`).value = `${detectedHeader + 2}`;
+    }
+    if (cfg.data_end != null) $(`#${prefix}-data-end`).value = cfg.data_end;
+    if (cfg.data_end_col != null) $(`#${prefix}-data-end-col`).value = cfg.data_end_col;
+}
+
+function saveCurrentConfig() {
+    const cfg = {
+        salary: {
+            header_rows: $('#salary-header-rows').value,
+            data_start: $('#salary-data-start').value,
+            data_end: $('#salary-data-end').value,
+            data_end_col: $('#salary-data-end-col').value.trim(),
+        },
+        email: {
+            header_rows: $('#email-header-rows').value,
+            data_start: $('#email-data-start').value,
+            data_end: $('#email-data-end').value,
+            data_end_col: $('#email-data-end-col').value.trim(),
+        },
+    };
+    state.savedConfig = cfg;
+    try { localStorage.setItem(USER_CONFIG_LS_KEY, JSON.stringify(cfg)); } catch (e) { /* ignore */ }
+    clearTimeout(saveConfigTimer);
+    saveConfigTimer = setTimeout(() => {
+        fetch('/api/user-config', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(cfg),
+        }).catch(() => {});
+    }, 800);
 }
 
 function renderTable(tableEl, rows, startRow, headerRows, rowIndices) {
@@ -262,13 +331,8 @@ $('#salary-file').addEventListener('change', async (e) => {
         sheetSelect.appendChild(opt);
     });
 
-    // defaults
-    if (data.detected_header_row !== null) {
-        const top = data.detected_header_row; // 0-based
-        $('#salary-header-rows').value = `${top + 1}`;
-        $('#salary-data-start').value = `${top + 2}`;
-    }
-    $('#salary-data-end-col').value = '';
+    // defaults: 优先使用个性化配置，否则根据检测结果
+    applySectionDefaults('salary', data.detected_header_row);
 
     // 记住从表格/文件名解析出的年月，供第三步预填
     if (data.detected_year !== null && data.detected_month !== null) {
@@ -303,11 +367,7 @@ $('#salary-sheet').addEventListener('change', async () => {
         state.salary.previewRowIndices = data.preview_row_indices || [];
         const sliced = slicePreviewByEndCol(data.preview, $('#salary-data-end-col').value, state.salary.previewRowIndices);
         renderTable($('#salary-preview-table'), sliced.rows, 1, parseHeaderRows($('#salary-header-rows').value), sliced.rowIndices);
-        if (data.detected_header_row !== null) {
-            const top = data.detected_header_row;
-            $('#salary-header-rows').value = `${top + 1}`;
-            $('#salary-data-start').value = `${top + 2}`;
-        }
+        applySectionDefaults('salary', data.detected_header_row);
         $('#to-step2').disabled = true;
     } catch (err) {
         console.error(err);
@@ -399,12 +459,7 @@ $('#email-file').addEventListener('change', async (e) => {
             sheetSelect.appendChild(opt);
         });
 
-        if (data.detected_header_row !== null) {
-            const top = data.detected_header_row;
-            $('#email-header-rows').value = `${top + 1}`;
-            $('#email-data-start').value = `${top + 2}`;
-        }
-        $('#email-data-end-col').value = '';
+        applySectionDefaults('email', data.detected_header_row);
 
         show($('#email-config'));
         show($('#email-preview-area'));
@@ -433,11 +488,7 @@ $('#email-sheet').addEventListener('change', async () => {
         state.email.previewRowIndices = data.preview_row_indices || [];
         const sliced = slicePreviewByEndCol(data.preview, $('#email-data-end-col').value, state.email.previewRowIndices);
         renderTable($('#email-preview-table'), sliced.rows, 1, parseHeaderRows($('#email-header-rows').value), sliced.rowIndices);
-        if (data.detected_header_row !== null) {
-            const top = data.detected_header_row;
-            $('#email-header-rows').value = `${top + 1}`;
-            $('#email-data-start').value = `${top + 2}`;
-        }
+        applySectionDefaults('email', data.detected_header_row);
         $('#to-step3').disabled = true;
     } catch (err) {
         console.error(err);
@@ -1109,6 +1160,14 @@ async function loadHistory() {
 
 // Init
 updateStepClickable();
+loadSavedConfig();
+
+['salary', 'email'].forEach(kind => {
+    ['header-rows', 'data-start', 'data-end', 'data-end-col'].forEach(field => {
+        const el = $(`#${kind}-${field}`);
+        if (el) el.addEventListener('input', saveCurrentConfig);
+    });
+});
 
 // Theme
 const THEME_KEY = 'salary_manager_theme';
