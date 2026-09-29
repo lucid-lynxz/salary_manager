@@ -787,7 +787,7 @@ function renderSalaryValidation() {
         ${vs.skippedEmpty > 0 ? `<div class="stat">跳过空行：${vs.skippedEmpty}</div>` : ''}
     `;
     if (!vs.hasAccountField) {
-        html += `<div class="stat invalid">未检测到"领款人帐号"列</div>`;
+        html += `<div class="stat invalid">未检测到"银行卡号"列</div>`;
     } else {
         if (pendingDup > 0) html += `<div class="stat invalid">待确认重复账号：${pendingDup}</div>`;
         if (pendingEmpty > 0) html += `<div class="stat invalid">账号为空：${pendingEmpty}</div>`;
@@ -812,7 +812,7 @@ function renderSalaryValidation() {
     };
 
     if (vs.duplicateAccountGroups.length > 0) {
-        html += `<div class="duplicate-section"><h4>重复领款人账号 ${pendingDup > 0 ? `<button class="btn small" data-salary-confirm-all="dup">全部确认</button>` : ''}</h4>`;
+        html += `<div class="duplicate-section"><h4>重复银行卡号 ${pendingDup > 0 ? `<button class="btn small" data-salary-confirm-all="dup">全部确认</button>` : ''}</h4>`;
         vs.duplicateAccountGroups.forEach((g, gi) => {
             const allConfirmed = g.rows.every(r => r.confirmed);
             html += `<div class="duplicate-group ${allConfirmed ? 'confirmed' : ''}">

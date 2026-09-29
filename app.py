@@ -380,7 +380,7 @@ def detect_salary_fields(headers):
         "gross_salary": ["应发工资"],
         "total_deduction": ["代扣合计", "扣款合计"],
         "net_salary": ["实发工资"],
-        "bank_account": ["领款人帐号", "领款人账号", "银行账号", "账号", "卡号"],
+        "bank_account": ["银行卡号", "领款人帐号", "领款人账号", "银行账号", "账号", "卡号"],
     }
     def norm(h):
         return re.sub(r"\s+", "", h)
