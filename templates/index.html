@@ -70,10 +70,14 @@
                             <span class="hint-inline">支持 .xlsx / .xls，表头可能跨多行</span>
                         </div>
                         <div id="salary-config" class="config-panel hidden">
-                            <div class="form-row form-row-2">
+                            <div class="form-row form-row-3">
                                 <div class="form-group">
                                     <label>工作表 Sheet</label>
                                     <select id="salary-sheet"></select>
+                                </div>
+                                <div class="form-group">
+                                    <label>跳过行</label>
+                                    <input type="text" id="salary-skip-rows" placeholder="如 1,2 或 1-2">
                                 </div>
                                 <div class="form-group">
                                     <label>表头所在行</label>
@@ -130,15 +134,19 @@
                                     <select id="email-sheet"></select>
                                 </div>
                                 <div class="form-group">
+                                    <label>跳过行</label>
+                                    <input type="text" id="email-skip-rows" placeholder="如 1 或 1-2">
+                                </div>
+                                <div class="form-group">
                                     <label>表头所在行</label>
                                     <input type="text" id="email-header-rows" value="2" placeholder="如 2 或 2-3">
                                 </div>
+                            </div>
+                            <div class="form-row form-row-3">
                                 <div class="form-group">
                                     <label>邮箱列</label>
                                     <select id="email-col"></select>
                                 </div>
-                            </div>
-                            <div class="form-row form-row-2">
                                 <div class="form-group">
                                     <label>数据起始行</label>
                                     <input type="number" id="email-data-start" value="3" min="1">

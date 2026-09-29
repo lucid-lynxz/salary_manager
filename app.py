@@ -345,17 +345,21 @@ def extract_person_summary(detail):
     return result
 
 
-def parse_records(df, header_rows, data_start_row, data_end_row, mapping, is_email=False):
+def parse_records(df, header_rows, data_start_row, data_end_row, mapping, skip_rows=None, is_email=False):
     headers = fill_merged_headers(df, header_rows)
     start = data_start_row
     end = data_end_row if data_end_row else len(df)
+    skip_set = set(int(r) for r in (skip_rows or []))
     records = []
     for idx in range(start, end):
+        excel_row = int(idx) + 1
+        if excel_row in skip_set:
+            continue
         row = df.iloc[idx].tolist()
         first_cell = normalize_text(row[0]) if row else ""
         if not first_cell or "计" in first_cell or "合计" in first_cell or "审核" in first_cell:
             continue
-        record = {"_row_index": int(idx) + 1, "_raw": {h: normalize_text(v) for h, v in zip(headers, row)}}
+        record = {"_row_index": excel_row, "_raw": {h: normalize_text(v) for h, v in zip(headers, row)}}
         for key, col_idx in mapping.items():
             record[key] = normalize_text(row[col_idx]) if col_idx < len(row) else ""
         records.append(record)
@@ -456,6 +460,7 @@ def validate_salary_records(records, headers):
             "gross": gross,
             "deduction": deduction,
             "net": net,
+            "previous": previous_accounts.get((community, name), ""),
         })
 
     total_valid = len(cleaned_list)
@@ -532,6 +537,7 @@ def validate_salary_records(records, headers):
         "account_changed_groups": account_changed,
         "account_empty_issues": account_empty,
         "has_previous_data": len(previous_accounts) > 0,
+        "all_rows": cleaned_list,
     }
 
 
@@ -663,6 +669,7 @@ def api_parse_config():
     data_start_row = data.get("data_start_row", 1)
     data_end_row = data.get("data_end_row")
     data_end_col = data.get("data_end_col")
+    skip_rows = data.get("skip_rows", [])
 
     if not file_id or not sheet_name:
         return jsonify({"error": "缺少参数"}), 400
@@ -690,7 +697,7 @@ def api_parse_config():
         mapping = suggest_column_mapping(headers, candidates)
 
         records, _ = parse_records(
-            df, header_rows, data_start_row, data_end_row, mapping, is_email=(file_type == "email")
+            df, header_rows, data_start_row, data_end_row, mapping, skip_rows=skip_rows, is_email=(file_type == "email")
         )
 
         # 邮箱校验预览
@@ -796,7 +803,7 @@ def api_import():
         e_data_start = int(email_cfg.get("data_start_row", 2)) - 1
         e_data_end = int(email_cfg["data_end_row"]) if email_cfg.get("data_end_row") else None
         e_mapping = email_cfg.get("mapping", {})
-        email_records, _ = parse_records(edf, e_header_rows, e_data_start, e_data_end, e_mapping, is_email=True)
+        email_records, _ = parse_records(edf, e_header_rows, e_data_start, e_data_end, e_mapping, skip_rows=email_cfg.get("skip_rows", []), is_email=True)
 
         # 应用用户在前端修正的邮箱覆盖
         overrides = email_cfg.get("overrides") or {}
@@ -834,10 +841,12 @@ def api_import():
         s_data_end = int(salary_cfg["data_end_row"]) if salary_cfg.get("data_end_row") else None
         s_mapping = salary_cfg.get("mapping", {})
         salary_records, salary_headers = parse_records(
-            sdf, s_header_rows, s_data_start, s_data_end, s_mapping, is_email=False
+            sdf, s_header_rows, s_data_start, s_data_end, s_mapping, skip_rows=salary_cfg.get("skip_rows", []), is_email=False
         )
 
         field_indexes = detect_salary_fields(salary_headers)
+
+        salary_overrides = salary_cfg.get("overrides") or {}
 
         # 写入数据库
         with get_db() as conn:
@@ -874,11 +883,28 @@ def api_import():
                 person_id = cur.lastrowid
 
                 raw_row = r.get("_raw", {})
-                gross = to_float(raw_row.get(salary_headers[field_indexes.get("gross_salary", -1)])) if "gross_salary" in field_indexes else None
-                total_deduction = to_float(raw_row.get(salary_headers[field_indexes.get("total_deduction", -1)])) if "total_deduction" in field_indexes else None
-                net = to_float(raw_row.get(salary_headers[field_indexes.get("net_salary", -1)])) if "net_salary" in field_indexes else None
-                bank_raw = raw_row.get(salary_headers[field_indexes.get("bank_account", -1)]) if "bank_account" in field_indexes else None
-                bank = clean_account(bank_raw) if bank_raw else None
+                row_index = str(r.get("_row_index", ""))
+                ov = salary_overrides.get(row_index) or {}
+
+                gross = ov.get("gross")
+                if gross is None and "gross_salary" in field_indexes:
+                    gross = to_float(raw_row.get(salary_headers[field_indexes["gross_salary"]]))
+
+                total_deduction = ov.get("deduction")
+                if total_deduction is None and "total_deduction" in field_indexes:
+                    total_deduction = to_float(raw_row.get(salary_headers[field_indexes["total_deduction"]]))
+
+                net = ov.get("net")
+                if net is None and "net_salary" in field_indexes:
+                    net = to_float(raw_row.get(salary_headers[field_indexes["net_salary"]]))
+
+                bank_raw = raw_row.get(salary_headers[field_indexes["bank_account", -1]]) if "bank_account" in field_indexes else None
+                if ov.get("account_clean"):
+                    bank = str(ov["account_clean"])
+                elif bank_raw:
+                    bank = clean_account(bank_raw)
+                else:
+                    bank = None
 
                 conn.execute(
                     "INSERT INTO salary_records (import_id, person_id, data_json, gross_salary, total_deduction, net_salary, bank_account) "
@@ -1107,12 +1133,14 @@ def api_delete_import(import_id):
 
 DEFAULT_USER_CONFIG = {
     "salary": {
+        "skip_rows": "",
         "header_rows": "3,4",
         "data_start": "5",
         "data_end": "",
         "data_end_col": "",
     },
     "email": {
+        "skip_rows": "",
         "header_rows": "2",
         "data_start": "3",
         "data_end": "",

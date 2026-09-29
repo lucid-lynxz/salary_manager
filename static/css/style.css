@@ -328,6 +328,15 @@ tr.omitted-row td.omitted-cell {
     border-radius: 4px;
     font-size: 13px;
 }
+.salary-edit-input {
+    padding: 4px 8px;
+    border: 1px solid var(--primary);
+    border-radius: 4px;
+    font-size: 13px;
+    font-family: inherit;
+}
+.editing-row td { background: #fff7ed; }
+.editing-row td input:focus { outline: 2px solid var(--primary); }
 .btn.small { padding: 4px 10px; font-size: 12px; }
 .duplicate-group .btn.text { color: var(--primary); }
 .duplicate-group .btn.text:hover { background: #eff6ff; }
