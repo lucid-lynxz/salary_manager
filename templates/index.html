@@ -165,16 +165,16 @@
                             </div>
                             <div class="form-row form-row-3">
                                 <div class="form-group">
-                                    <label>邮箱列</label>
-                                    <select id="email-col"></select>
-                                </div>
-                                <div class="form-group">
                                     <label>数据起始行</label>
                                     <input type="number" id="email-data-start" value="3" min="1">
                                 </div>
                                 <div class="form-group">
                                     <label>数据结束行</label>
                                     <input type="number" id="email-data-end" placeholder="留空到末尾">
+                                </div>
+                                <div class="form-group">
+                                    <label>数据结束列</label>
+                                    <input type="text" id="email-data-end-col" placeholder="如 Z、AA">
                                 </div>
                             </div>
                             <div class="form-row form-row-3">
@@ -187,8 +187,8 @@
                                     <select id="email-community-col"></select>
                                 </div>
                                 <div class="form-group">
-                                    <label>数据结束列</label>
-                                    <input type="text" id="email-data-end-col" placeholder="如 Z、AA">
+                                    <label>邮箱列</label>
+                                    <select id="email-col"></select>
                                 </div>
                             </div>
                             <button id="email-preview-btn" class="btn secondary">解析并校验邮箱</button>
