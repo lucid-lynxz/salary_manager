@@ -1,6 +1,6 @@
 // State
 const state = {
-    salary: { fileId: null, filename: null, config: null, parsed: null, preview: null },
+    salary: { fileId: null, filename: null, config: null, parsed: null, preview: null, previewRowIndices: [], mapping: null, validationState: null },
     email: { fileId: null, filename: null, config: null, parsed: null, preview: null, previewRowIndices: [], mapping: null, overrides: {}, overrideLog: {}, validationState: null },
     currentStep: 1,
     unlockedSteps: { 1: true },
@@ -422,21 +422,240 @@ async function parseSalary() {
 
         const headers = res.headers;
         const mapping = res.suggested_mapping || {};
+        state.salary.mapping = mapping;
         populateSelect($('#salary-name-col'), headers, mapping.name ?? -1);
         populateSelect($('#salary-community-col'), headers, mapping.community ?? -1);
 
         const resultEl = $('#salary-parse-result');
-        resultEl.innerHTML = `
-            <p>解析到 <strong>${res.record_count}</strong> 条有效工资记录</p>
+        let resultHtml = `
+            <p>解析到 <strong>${res.record_count}</strong> 条记录`;
+        if (res.validation) {
+            resultHtml += `，其中有效工资记录 <strong>${res.validation.total_valid}</strong> 条`;
+            if (res.validation.skipped_empty > 0) {
+                resultHtml += `，跳过 ${res.validation.skipped_empty} 条社区/姓名为空的行`;
+            }
+        }
+        resultHtml += `</p>
             <p>建议列映射：姓名=${mapping.name !== undefined ? headers[mapping.name] : '未识别'}, 社区=${mapping.community !== undefined ? headers[mapping.community] : '未识别'}</p>
         `;
+        resultEl.innerHTML = resultHtml;
         show(resultEl);
-        $('#to-step2').disabled = false;
+
+        initSalaryValidationState(res.validation);
+        renderSalaryValidation();
+
+        const vs = state.salary.validationState;
+        const hasBlocking = vs && (
+            (vs.duplicateAccountGroups && vs.duplicateAccountGroups.length > 0) ||
+            (vs.accountChangedGroups && vs.accountChangedGroups.length > 0) ||
+            (vs.mathMismatchIssues && vs.mathMismatchIssues.length > 0)
+        );
+        updateSalaryNextButton();
         unlockStep(2);
     } catch (err) {
         console.error(err);
         alert('解析工资表失败：' + err.message);
     }
+}
+
+function initSalaryValidationState(validation) {
+    if (!validation) { state.salary.validationState = null; return; }
+    const dupGroups = (validation.duplicate_account_groups || []).map(g => ({
+        account: g.account,
+        rows: g.rows.map(r => ({ ...r, confirmed: false })),
+    }));
+    const changed = (validation.account_changed_groups || []).map(r => ({ ...r, confirmed: false }));
+    const mathIssues = (validation.math_mismatch_issues || []).map(r => ({ ...r, confirmed: false }));
+    state.salary.validationState = {
+        totalValid: validation.total_valid,
+        skippedEmpty: validation.skipped_empty,
+        hasAccountField: validation.has_account_field,
+        hasMathFields: validation.has_math_fields,
+        hasPreviousData: validation.has_previous_data,
+        duplicateAccountGroups: dupGroups,
+        accountChangedGroups: changed,
+        mathMismatchIssues: mathIssues,
+        accountEmptyIssues: validation.account_empty_issues || [],
+    };
+}
+
+function confirmSalaryGroup(type, idx) {
+    const vs = state.salary.validationState;
+    if (!vs) return;
+    if (type === 'dup') {
+        vs.duplicateAccountGroups[idx].rows.forEach(r => r.confirmed = true);
+    } else if (type === 'changed') {
+        vs.accountChangedGroups[idx].confirmed = true;
+    } else if (type === 'math') {
+        vs.mathMismatchIssues[idx].confirmed = true;
+    }
+    renderSalaryValidation();
+    updateSalaryNextButton();
+}
+
+function confirmAllSalaryGroups(type) {
+    const vs = state.salary.validationState;
+    if (!vs) return;
+    if (type === 'dup') {
+        vs.duplicateAccountGroups.forEach(g => g.rows.forEach(r => r.confirmed = true));
+    } else if (type === 'changed') {
+        vs.accountChangedGroups.forEach(r => r.confirmed = true);
+    } else if (type === 'math') {
+        vs.mathMismatchIssues.forEach(r => r.confirmed = true);
+    }
+    renderSalaryValidation();
+    updateSalaryNextButton();
+}
+
+function updateSalaryNextButton() {
+    const vs = state.salary.validationState;
+    if (!vs) { $('#to-step2').disabled = true; return; }
+    const dupPending = vs.duplicateAccountGroups.some(g => g.rows.some(r => !r.confirmed));
+    const changedPending = vs.accountChangedGroups.some(r => !r.confirmed);
+    const mathPending = vs.mathMismatchIssues.some(r => !r.confirmed);
+    $('#to-step2').disabled = dupPending || changedPending || mathPending;
+}
+
+function renderSalaryValidation() {
+    const el = $('#salary-validation');
+    const vs = state.salary.validationState;
+    if (!vs) { hide(el); return; }
+    show(el);
+
+    const pendingDup = vs.duplicateAccountGroups.reduce((s, g) => s + g.rows.filter(r => !r.confirmed).length, 0);
+    const pendingChanged = vs.accountChangedGroups.filter(r => !r.confirmed).length;
+    const pendingMath = vs.mathMismatchIssues.filter(r => !r.confirmed).length;
+
+    let html = '';
+
+    html += `<div class="stats">
+        <div class="stat valid">有效：${vs.totalValid}</div>
+        ${vs.skippedEmpty > 0 ? `<div class="stat">跳过空行：${vs.skippedEmpty}</div>` : ''}
+    `;
+    if (!vs.hasAccountField) {
+        html += `<div class="stat invalid">未检测到"领款人帐号"列</div>`;
+    } else {
+        if (pendingDup > 0) html += `<div class="stat invalid">待确认重复账号：${pendingDup}</div>`;
+        if (vs.accountEmptyIssues.length > 0) html += `<div class="stat invalid">账号为空：${vs.accountEmptyIssues.length}</div>`;
+    }
+    if (vs.hasPreviousData && pendingChanged > 0) {
+        html += `<div class="stat invalid">账号变化待确认：${pendingChanged}</div>`;
+    }
+    if (vs.hasMathFields && pendingMath > 0) {
+        html += `<div class="stat invalid">实发工资对不上：${pendingMath}</div>`;
+    }
+    html += `</div>`;
+
+    if (!vs.hasAccountField && !vs.hasMathFields && !vs.hasPreviousData) {
+        html += `<p>（未检测到账号/工资计算字段，以上校验未执行）</p>`;
+        el.innerHTML = html;
+        return;
+    }
+
+    if (vs.duplicateAccountGroups.length > 0) {
+        html += `<div class="duplicate-section"><h4>重复领款人账号 ${pendingDup > 0 ? `<button class="btn small" data-salary-confirm-all="dup">全部确认</button>` : ''}</h4>`;
+        vs.duplicateAccountGroups.forEach((g, gi) => {
+            const allConfirmed = g.rows.every(r => r.confirmed);
+            html += `<div class="duplicate-group ${allConfirmed ? 'confirmed' : ''}">
+                <div class="group-header">
+                    <span class="group-email">${escapeHtml(g.account)}</span>
+                    <span class="group-count">共 ${g.rows.length} 人</span>
+                    ${allConfirmed ? '<span class="group-status">已确认</span>' : `<button class="btn small" data-salary-confirm-group="dup|${gi}">全部确认</button>`}
+                </div>
+                <table><thead><tr><th>行号</th><th>社区</th><th>姓名</th><th>原始账号</th><th>清洗后</th><th>操作</th></tr></thead><tbody>`;
+            g.rows.forEach((r, ri) => {
+                html += `<tr class="${r.confirmed ? 'confirmed-row' : ''}">
+                    <td>${escapeHtml(r.row)}</td>
+                    <td>${escapeHtml(r.community)}</td>
+                    <td>${escapeHtml(r.name)}</td>
+                    <td>${escapeHtml(r.account_raw)}</td>
+                    <td>${escapeHtml(r.account_clean)}</td>
+                    <td>${r.confirmed ? '<span class="confirmed-tag">已确认</span>' : `<button class="btn small" data-salary-confirm-row="dup|${gi}|${ri}">确认</button>`}</td>
+                </tr>`;
+            });
+            html += `</tbody></table></div>`;
+        });
+        html += `</div>`;
+    }
+
+    if (vs.accountChangedGroups.length > 0) {
+        html += `<div class="duplicate-section"><h4>账号变化（与上次导入对比） ${pendingChanged > 0 ? `<button class="btn small" data-salary-confirm-all="changed">全部确认</button>` : ''}</h4>`;
+        vs.accountChangedGroups.forEach((r, gi) => {
+            html += `<div class="duplicate-group ${r.confirmed ? 'confirmed' : ''}">
+                <div class="group-header">
+                    <span class="group-email">${escapeHtml(r.community)} / ${escapeHtml(r.name)}</span>
+                    ${r.confirmed ? '<span class="group-status">已确认</span>' : `<button class="btn small" data-salary-confirm-row="changed|${gi}">确认</button>`}
+                </div>
+                <table><thead><tr><th>行号</th><th>上次账号</th><th>本次账号</th><th>变化</th></tr></thead><tbody>
+                <tr><td>${escapeHtml(r.row)}</td><td>${escapeHtml(r.previous)}</td><td>${escapeHtml(r.current)}</td><td>${escapeHtml(r.previous)} → ${escapeHtml(r.current)}</td></tr>
+                </tbody></table></div>`;
+        });
+        html += `</div>`;
+    }
+
+    if (vs.mathMismatchIssues.length > 0) {
+        html += `<div class="duplicate-section"><h4>实发工资对不上（应发 - 代扣 ≠ 实发） ${pendingMath > 0 ? `<button class="btn small" data-salary-confirm-all="math">全部确认</button>` : ''}</h4>`;
+        vs.mathMismatchIssues.forEach((r, gi) => {
+            html += `<div class="duplicate-group ${r.confirmed ? 'confirmed' : ''}">
+                <div class="group-header">
+                    <span class="group-email">${escapeHtml(r.community)} / ${escapeHtml(r.name)}</span>
+                    ${r.confirmed ? '<span class="group-status">已确认</span>' : `<button class="btn small" data-salary-confirm-row="math|${gi}">确认</button>`}
+                </div>
+                <table><thead><tr><th>行号</th><th>应发工资</th><th>代扣合计</th><th>实发工资</th><th>差额</th></tr></thead><tbody>
+                <tr><td>${escapeHtml(r.row)}</td><td>${r.gross}</td><td>${r.deduction}</td><td>${r.net}</td><td style="color:var(--danger)">${r.diff > 0 ? '+' : ''}${r.diff}</td></tr>
+                </tbody></table></div>`;
+        });
+        html += `</div>`;
+    }
+
+    if (vs.accountEmptyIssues.length > 0) {
+        html += `<div class="issues-section"><h4>账号为空</h4>
+            <table><thead><tr><th>行号</th><th>社区</th><th>姓名</th><th>原始值</th></tr></thead><tbody>`;
+        vs.accountEmptyIssues.forEach(r => {
+            html += `<tr><td>${escapeHtml(r.row)}</td><td>${escapeHtml(r.community)}</td><td>${escapeHtml(r.name)}</td><td>${escapeHtml(r.account_raw || '(空)')}</td></tr>`;
+        });
+        html += `</tbody></table></div>`;
+    }
+
+    if (vs.duplicateAccountGroups.length === 0 && vs.accountChangedGroups.length === 0 && vs.mathMismatchIssues.length === 0 && vs.accountEmptyIssues.length === 0) {
+        html += `<p>所有数据均校验通过 ✅</p>`;
+    }
+
+    el.innerHTML = html;
+
+    el.querySelectorAll('[data-salary-confirm-row]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const parts = btn.dataset.salaryConfirmRow.split('|');
+            const type = parts[0], idx1 = parseInt(parts[1]), idx2 = parseInt(parts[2]);
+            if (type === 'dup') confirmSalaryGroup('dup-row', idx1, idx2);
+            else confirmSalaryGroup(type, idx1);
+        });
+    });
+    el.querySelectorAll('[data-salary-confirm-group]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const parts = btn.dataset.salaryConfirmGroup.split('|');
+            confirmSalaryGroup(parts[0], parseInt(parts[1]));
+        });
+    });
+    el.querySelectorAll('[data-salary-confirm-all]').forEach(btn => {
+        btn.addEventListener('click', () => confirmAllSalaryGroups(btn.dataset.salaryConfirmAll));
+    });
+}
+
+function confirmSalaryGroup(type, idx, rowIdx) {
+    const vs = state.salary.validationState;
+    if (!vs) return;
+    if (type === 'dup-row') {
+        vs.duplicateAccountGroups[idx].rows[rowIdx].confirmed = true;
+    } else if (type === 'dup') {
+        vs.duplicateAccountGroups[idx].rows.forEach(r => r.confirmed = true);
+    } else if (type === 'changed') {
+        vs.accountChangedGroups[idx].confirmed = true;
+    } else if (type === 'math') {
+        vs.mathMismatchIssues[idx].confirmed = true;
+    }
+    renderSalaryValidation();
+    updateSalaryNextButton();
 }
 
 // Email upload

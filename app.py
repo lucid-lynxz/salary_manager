@@ -352,7 +352,6 @@ def parse_records(df, header_rows, data_start_row, data_end_row, mapping, is_ema
     records = []
     for idx in range(start, end):
         row = df.iloc[idx].tolist()
-        # 跳过空行或合计行
         first_cell = normalize_text(row[0]) if row else ""
         if not first_cell or "计" in first_cell or "合计" in first_cell or "审核" in first_cell:
             continue
@@ -361,6 +360,179 @@ def parse_records(df, header_rows, data_start_row, data_end_row, mapping, is_ema
             record[key] = normalize_text(row[col_idx]) if col_idx < len(row) else ""
         records.append(record)
     return records, headers
+
+
+def clean_account(raw):
+    if pd.isna(raw):
+        return ""
+    text = str(raw).strip()
+    text = re.sub(r"[\s\n\r\t]+", "", text)
+    text = re.sub(r"[^\d]", "", text)
+    return text
+
+
+def detect_salary_fields(headers):
+    patterns = {
+        "gross_salary": ["应发工资"],
+        "total_deduction": ["代扣合计", "扣款合计"],
+        "net_salary": ["实发工资"],
+        "bank_account": ["领款人帐号", "领款人账号", "银行账号", "账号", "卡号"],
+    }
+    def norm(h):
+        return re.sub(r"\s+", "", h)
+    indexes = {}
+    for field, pats in patterns.items():
+        for idx, h in enumerate(headers):
+            hn = norm(h)
+            if any(re.sub(r"\s+", "", p) in hn for p in pats):
+                indexes[field] = idx
+                break
+    return indexes
+
+
+def get_previous_accounts():
+    """返回上一次导入的 {(community, name): bank_account}。"""
+    with get_db() as conn:
+        row = conn.execute("SELECT id FROM salary_imports ORDER BY year DESC, month DESC, id DESC LIMIT 1").fetchone()
+        if not row:
+            return {}
+        prev_id = row["id"]
+        rows = conn.execute("""
+            SELECT p.community, p.name, s.bank_account
+            FROM persons p
+            JOIN salary_records s ON s.person_id = p.id
+            WHERE p.import_id = ?
+        """, (prev_id,)).fetchall()
+    return {(r["community"], r["name"]): (r["bank_account"] or "") for r in rows}
+
+
+def validate_salary_records(records, headers):
+    """对工资记录做校验，返回 validation dict。"""
+    field_indexes = detect_salary_fields(headers)
+    has_account = "bank_account" in field_indexes
+    has_gross = "gross_salary" in field_indexes
+    has_deduction = "total_deduction" in field_indexes
+    has_net = "net_salary" in field_indexes
+
+    previous_accounts = get_previous_accounts()
+
+    valid_rows = []
+    skipped_empty = 0
+    cleaned_list = []
+
+    for r in records:
+        community = r.get("community", "").strip()
+        name = r.get("name", "").strip()
+        if not community or not name:
+            skipped_empty += 1
+            continue
+        valid_rows.append(r)
+
+        raw_row = r.get("_raw", {})
+        account_raw = ""
+        account_clean = ""
+        if has_account:
+            col_idx = field_indexes["bank_account"]
+            header_key = headers[col_idx]
+            account_raw = raw_row.get(header_key, "")
+            account_clean = clean_account(account_raw)
+
+        gross = None
+        deduction = None
+        net = None
+        if has_gross:
+            gross = to_float(raw_row.get(headers[field_indexes["gross_salary"]]))
+        if has_deduction:
+            deduction = to_float(raw_row.get(headers[field_indexes["total_deduction"]]))
+        if has_net:
+            net = to_float(raw_row.get(headers[field_indexes["net_salary"]]))
+
+        cleaned_list.append({
+            "row": r["_row_index"],
+            "community": community,
+            "name": name,
+            "account_raw": account_raw,
+            "account_clean": account_clean,
+            "gross": gross,
+            "deduction": deduction,
+            "net": net,
+        })
+
+    total_valid = len(cleaned_list)
+
+    account_counts = {}
+    for c in cleaned_list:
+        if c["account_clean"]:
+            account_counts[c["account_clean"]] = account_counts.get(c["account_clean"], 0) + 1
+
+    duplicate_groups = []
+    seen = set()
+    for c in cleaned_list:
+        acc = c["account_clean"]
+        if not acc or account_counts.get(acc, 0) <= 1 or acc in seen:
+            continue
+        group_rows = [x for x in cleaned_list if x["account_clean"] == acc]
+        if len(group_rows) <= 1:
+            continue
+        duplicate_groups.append({
+            "account": acc,
+            "count": len(group_rows),
+            "rows": group_rows,
+        })
+        seen.add(acc)
+
+    math_mismatch = []
+    for c in cleaned_list:
+        if c["gross"] is None or c["deduction"] is None or c["net"] is None:
+            continue
+        diff = round(c["gross"] - c["deduction"] - c["net"], 2)
+        if abs(diff) > 0.02:
+            math_mismatch.append({
+                "row": c["row"],
+                "community": c["community"],
+                "name": c["name"],
+                "gross": c["gross"],
+                "deduction": c["deduction"],
+                "net": c["net"],
+                "diff": diff,
+            })
+
+    account_changed = []
+    for c in cleaned_list:
+        key = (c["community"], c["name"])
+        prev = previous_accounts.get(key)
+        cur = c["account_clean"]
+        if prev and cur and prev != cur:
+            account_changed.append({
+                "row": c["row"],
+                "community": c["community"],
+                "name": c["name"],
+                "previous": prev,
+                "current": cur,
+            })
+
+    account_empty = []
+    for c in cleaned_list:
+        if not c["account_clean"]:
+            account_empty.append({
+                "row": c["row"],
+                "community": c["community"],
+                "name": c["name"],
+                "account_raw": c["account_raw"],
+            })
+
+    return {
+        "total_parsed": len(records),
+        "skipped_empty": skipped_empty,
+        "total_valid": total_valid,
+        "has_account_field": has_account,
+        "has_math_fields": has_gross and has_deduction and has_net,
+        "duplicate_account_groups": duplicate_groups,
+        "math_mismatch_issues": math_mismatch,
+        "account_changed_groups": account_changed,
+        "account_empty_issues": account_empty,
+        "has_previous_data": len(previous_accounts) > 0,
+    }
 
 
 def build_preview_rows(df, detected_header, head_data=5, tail_data=5, threshold=10):
@@ -584,6 +756,9 @@ def api_parse_config():
                 "duplicate_groups": duplicate_groups,
             }
 
+        if file_type == "salary":
+            validation = validate_salary_records(records, headers)
+
         return jsonify({
             "headers": headers,
             "suggested_mapping": mapping,
@@ -662,28 +837,7 @@ def api_import():
             sdf, s_header_rows, s_data_start, s_data_end, s_mapping, is_email=False
         )
 
-        # 提取关键工资字段（基于列名模糊匹配）
-        field_patterns = {
-            "gross_salary": ["应发工资"],
-            "housing_fund": ["住房", "公积金"],
-            "pension": ["养老", "养老保险"],
-            "unemployment": ["失业", "失业保险"],
-            "medical": ["医疗", "医疗保险"],
-            "income_tax": ["个人所得税", "个税"],
-            "total_deduction": ["代扣合计", "扣款合计"],
-            "net_salary": ["实发工资"],
-            "bank_account": ["领款人帐号", "银行账号", "账号", "卡号"],
-        }
-        def norm_header(h):
-            return re.sub(r"\s+", "", h)
-
-        field_indexes = {}
-        for field, patterns in field_patterns.items():
-            for idx, h in enumerate(salary_headers):
-                h_norm = norm_header(h)
-                if any(p in h_norm for p in patterns):
-                    field_indexes[field] = idx
-                    break
+        field_indexes = detect_salary_fields(salary_headers)
 
         # 写入数据库
         with get_db() as conn:
@@ -723,7 +877,8 @@ def api_import():
                 gross = to_float(raw_row.get(salary_headers[field_indexes.get("gross_salary", -1)])) if "gross_salary" in field_indexes else None
                 total_deduction = to_float(raw_row.get(salary_headers[field_indexes.get("total_deduction", -1)])) if "total_deduction" in field_indexes else None
                 net = to_float(raw_row.get(salary_headers[field_indexes.get("net_salary", -1)])) if "net_salary" in field_indexes else None
-                bank = raw_row.get(salary_headers[field_indexes.get("bank_account", -1)]) if "bank_account" in field_indexes else None
+                bank_raw = raw_row.get(salary_headers[field_indexes.get("bank_account", -1)]) if "bank_account" in field_indexes else None
+                bank = clean_account(bank_raw) if bank_raw else None
 
                 conn.execute(
                     "INSERT INTO salary_records (import_id, person_id, data_json, gross_salary, total_deduction, net_salary, bank_account) "
