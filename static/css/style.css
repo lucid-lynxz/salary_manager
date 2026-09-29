@@ -107,17 +107,20 @@ header h1 { margin: 0 0 16px; font-size: 24px; }
 h2 { margin-top: 0; font-size: 20px; }
 h3 { font-size: 16px; margin: 20px 0 12px; }
 
-.form-group { margin-bottom: 16px; }
+.form-group { margin-bottom: 12px; }
 .form-group label {
     display: block;
     font-weight: 500;
-    margin-bottom: 6px;
-    font-size: 14px;
+    margin-bottom: 4px;
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 .form-group input,
 .form-group select {
     width: 100%;
-    padding: 8px 12px;
+    padding: 6px 10px;
     border: 1px solid var(--border);
     border-radius: var(--radius);
     font-size: 14px;
@@ -125,9 +128,32 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 .form-row {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 16px;
+    gap: 12px;
 }
-.mapping-row { grid-template-columns: repeat(3, 1fr); }
+.form-row-3 {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+}
+.form-group.empty-filler { visibility: hidden; }
+.mapping-row { grid-template-columns: repeat(3, 1fr); gap: 12px; }
+
+.file-upload-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.file-upload-row input[type="file"] {
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--card);
+    font-size: 13px;
+}
+.hint-inline {
+    font-size: 12px;
+    color: var(--muted);
+}
 
 .hint { font-size: 12px; color: var(--muted); margin: 4px 0 0; }
 .warning {
@@ -396,7 +422,7 @@ tr.omitted-row td.omitted-cell {
 
 @media (max-width: 768px) {
     .search-bar { grid-template-columns: 1fr; }
-    .mapping-row { grid-template-columns: 1fr; }
+    .form-row-3, .mapping-row { grid-template-columns: 1fr; }
     .wizard-steps { flex-direction: column; }
 }
 

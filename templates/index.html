@@ -65,42 +65,37 @@
                     <!-- Step 1: Salary -->
                     <div class="step-content active" data-step="1">
                         <h2>第一步：选择工资表 Excel</h2>
-                        <div class="form-group">
-                            <label>工资表文件</label>
+                        <div class="file-upload-row">
                             <input type="file" id="salary-file" accept=".xlsx,.xls">
-                            <p class="hint">支持 .xlsx / .xls，表头可能跨多行</p>
+                            <span class="hint-inline">支持 .xlsx / .xls，表头可能跨多行</span>
                         </div>
                         <div id="salary-config" class="config-panel hidden">
-                            <div class="form-row">
+                            <div class="form-row form-row-3">
                                 <div class="form-group">
                                     <label>工作表 Sheet</label>
                                     <select id="salary-sheet"></select>
                                 </div>
                                 <div class="form-group">
-                                    <label>表头所在行（可多行，1-based）</label>
-                                    <input type="text" id="salary-header-rows" value="3,4" placeholder="例如：3,4 或 3-4">
-                                    <p class="hint">多行表头用逗号或连字符分隔，如 3,4、3-4 或 2,4-6</p>
+                                    <label>表头所在行</label>
+                                    <input type="text" id="salary-header-rows" value="3,4" placeholder="如 3,4 或 3-4">
                                 </div>
-                            </div>
-                            <div class="form-row">
                                 <div class="form-group">
                                     <label>数据起始行</label>
                                     <input type="number" id="salary-data-start" value="5" min="1">
                                 </div>
-                                <div class="form-group">
-                                    <label>数据结束行（留空表示到末尾）</label>
-                                    <input type="number" id="salary-data-end" placeholder="可选">
-                                </div>
                             </div>
-                            <div class="form-row">
+                            <div class="form-row form-row-3">
                                 <div class="form-group">
-                                    <label>数据结束列（留空表示不限制）</label>
-                                    <input type="text" id="salary-data-end-col" placeholder="例如 Z、AA 或 26">
-                                    <p class="hint">只导入从第一列到该列（含）的数据，留空则导入全部列</p>
+                                    <label>数据结束行</label>
+                                    <input type="number" id="salary-data-end" placeholder="留空到末尾">
                                 </div>
-                                <div class="form-group"></div>
+                                <div class="form-group">
+                                    <label>数据结束列</label>
+                                    <input type="text" id="salary-data-end-col" placeholder="如 Z、AA">
+                                </div>
+                                <div class="form-group empty-filler"></div>
                             </div>
-                            <div class="form-row mapping-row">
+                            <div class="form-row form-row-3 mapping-row">
                                 <div class="form-group">
                                     <label>姓名列</label>
                                     <select id="salary-name-col"></select>
@@ -109,6 +104,7 @@
                                     <label>社区列</label>
                                     <select id="salary-community-col"></select>
                                 </div>
+                                <div class="form-group empty-filler"></div>
                             </div>
                             <button id="salary-preview-btn" class="btn secondary">解析预览</button>
                         </div>
@@ -125,41 +121,36 @@
                     <!-- Step 2: Email -->
                     <div class="step-content" data-step="2">
                         <h2>第二步：选择人员邮箱表 Excel</h2>
-                        <div class="form-group">
-                            <label>邮箱表文件</label>
+                        <div class="file-upload-row">
                             <input type="file" id="email-file" accept=".xlsx,.xls">
                         </div>
                         <div id="email-config" class="config-panel hidden">
-                            <div class="form-row">
+                            <div class="form-row form-row-3">
                                 <div class="form-group">
                                     <label>工作表 Sheet</label>
                                     <select id="email-sheet"></select>
                                 </div>
                                 <div class="form-group">
-                                    <label>表头所在行（可多行，1-based）</label>
-                                    <input type="text" id="email-header-rows" value="2" placeholder="例如：2 或 2-3">
-                                    <p class="hint">多行表头用逗号或连字符分隔，如 2,3、2-3 或 2,4-6</p>
+                                    <label>表头所在行</label>
+                                    <input type="text" id="email-header-rows" value="2" placeholder="如 2 或 2-3">
                                 </div>
-                            </div>
-                            <div class="form-row">
                                 <div class="form-group">
                                     <label>数据起始行</label>
                                     <input type="number" id="email-data-start" value="3" min="1">
                                 </div>
-                                <div class="form-group">
-                                    <label>数据结束行（留空表示到末尾）</label>
-                                    <input type="number" id="email-data-end" placeholder="可选">
-                                </div>
                             </div>
-                            <div class="form-row">
+                            <div class="form-row form-row-3">
                                 <div class="form-group">
-                                    <label>数据结束列（留空表示不限制）</label>
-                                    <input type="text" id="email-data-end-col" placeholder="例如 Z、AA 或 26">
-                                    <p class="hint">只导入从第一列到该列（含）的数据，留空则导入全部列</p>
+                                    <label>数据结束行</label>
+                                    <input type="number" id="email-data-end" placeholder="留空到末尾">
                                 </div>
-                                <div class="form-group"></div>
+                                <div class="form-group">
+                                    <label>数据结束列</label>
+                                    <input type="text" id="email-data-end-col" placeholder="如 Z、AA">
+                                </div>
+                                <div class="form-group empty-filler"></div>
                             </div>
-                            <div class="form-row mapping-row">
+                            <div class="form-row form-row-3 mapping-row">
                                 <div class="form-group">
                                     <label>姓名列</label>
                                     <select id="email-name-col"></select>
