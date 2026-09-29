@@ -70,7 +70,7 @@
                             <span class="hint-inline">支持 .xlsx / .xls，表头可能跨多行</span>
                         </div>
                         <div id="salary-config" class="config-panel hidden">
-                            <div class="form-row form-row-3">
+                            <div class="form-row form-row-2">
                                 <div class="form-group">
                                     <label>工作表 Sheet</label>
                                     <select id="salary-sheet"></select>
@@ -79,23 +79,18 @@
                                     <label>表头所在行</label>
                                     <input type="text" id="salary-header-rows" value="3,4" placeholder="如 3,4 或 3-4">
                                 </div>
+                            </div>
+                            <div class="form-row form-row-2">
                                 <div class="form-group">
                                     <label>数据起始行</label>
                                     <input type="number" id="salary-data-start" value="5" min="1">
                                 </div>
-                            </div>
-                            <div class="form-row form-row-3">
                                 <div class="form-group">
                                     <label>数据结束行</label>
                                     <input type="number" id="salary-data-end" placeholder="留空到末尾">
                                 </div>
-                                <div class="form-group">
-                                    <label>数据结束列</label>
-                                    <input type="text" id="salary-data-end-col" placeholder="如 Z、AA">
-                                </div>
-                                <div class="form-group empty-filler"></div>
                             </div>
-                            <div class="form-row form-row-3 mapping-row">
+                            <div class="form-row form-row-3">
                                 <div class="form-group">
                                     <label>姓名列</label>
                                     <select id="salary-name-col"></select>
@@ -104,7 +99,10 @@
                                     <label>社区列</label>
                                     <select id="salary-community-col"></select>
                                 </div>
-                                <div class="form-group empty-filler"></div>
+                                <div class="form-group">
+                                    <label>数据结束列</label>
+                                    <input type="text" id="salary-data-end-col" placeholder="如 Z、AA">
+                                </div>
                             </div>
                             <button id="salary-preview-btn" class="btn secondary">解析预览</button>
                         </div>
@@ -135,22 +133,21 @@
                                     <input type="text" id="email-header-rows" value="2" placeholder="如 2 或 2-3">
                                 </div>
                                 <div class="form-group">
+                                    <label>邮箱列</label>
+                                    <select id="email-col"></select>
+                                </div>
+                            </div>
+                            <div class="form-row form-row-2">
+                                <div class="form-group">
                                     <label>数据起始行</label>
                                     <input type="number" id="email-data-start" value="3" min="1">
                                 </div>
-                            </div>
-                            <div class="form-row form-row-3">
                                 <div class="form-group">
                                     <label>数据结束行</label>
                                     <input type="number" id="email-data-end" placeholder="留空到末尾">
                                 </div>
-                                <div class="form-group">
-                                    <label>数据结束列</label>
-                                    <input type="text" id="email-data-end-col" placeholder="如 Z、AA">
-                                </div>
-                                <div class="form-group empty-filler"></div>
                             </div>
-                            <div class="form-row form-row-3 mapping-row">
+                            <div class="form-row form-row-3">
                                 <div class="form-group">
                                     <label>姓名列</label>
                                     <select id="email-name-col"></select>
@@ -160,8 +157,8 @@
                                     <select id="email-community-col"></select>
                                 </div>
                                 <div class="form-group">
-                                    <label>邮箱列</label>
-                                    <select id="email-col"></select>
+                                    <label>数据结束列</label>
+                                    <input type="text" id="email-data-end-col" placeholder="如 Z、AA">
                                 </div>
                             </div>
                             <button id="email-preview-btn" class="btn secondary">解析并校验邮箱</button>

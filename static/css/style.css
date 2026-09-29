@@ -130,12 +130,14 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
     grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
     gap: 12px;
 }
+.form-row-2 {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+}
 .form-row-3 {
     grid-template-columns: repeat(3, 1fr);
     gap: 12px;
 }
-.form-group.empty-filler { visibility: hidden; }
-.mapping-row { grid-template-columns: repeat(3, 1fr); gap: 12px; }
 
 .file-upload-row {
     display: flex;
@@ -422,7 +424,7 @@ tr.omitted-row td.omitted-cell {
 
 @media (max-width: 768px) {
     .search-bar { grid-template-columns: 1fr; }
-    .form-row-3, .mapping-row { grid-template-columns: 1fr; }
+    .form-row-2, .form-row-3 { grid-template-columns: 1fr; }
     .wizard-steps { flex-direction: column; }
 }
 
