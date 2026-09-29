@@ -1476,15 +1476,23 @@ $('#do-import').addEventListener('click', async () => {
             overrides: state.email.overrides,
         },
     };
-    const res = await postJson('/api/import', body);
     const box = $('#import-result');
     show(box);
+    box.className = 'result-box';
+    box.textContent = '正在导入...';
+    let res;
+    try {
+        res = await postJson('/api/import', body);
+    } catch (err) {
+        box.className = 'result-box error';
+        box.textContent = '导入失败：' + err.message;
+        return;
+    }
     if (res.error) {
         box.className = 'result-box error';
         box.textContent = '导入失败：' + res.error;
         return;
     }
-    box.className = 'result-box';
     let html = `<p>导入成功！年月：${res.year}年${res.month}月</p>`;
     html += `<p>工资记录：${res.stats.total_salary} 条，成功匹配邮箱：${res.stats.matched} 条，未匹配：${res.stats.unmatched} 条，邮箱异常：${res.stats.email_invalid} 条</p>`;
     if (res.unmatched && res.unmatched.length) {

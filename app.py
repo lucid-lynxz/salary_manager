@@ -929,7 +929,7 @@ def api_import():
                 if net is None and "net_salary" in field_indexes:
                     net = to_float(raw_row.get(salary_headers[field_indexes["net_salary"]]))
 
-                bank_raw = raw_row.get(salary_headers[field_indexes["bank_account", -1]]) if "bank_account" in field_indexes else None
+                bank_raw = raw_row.get(salary_headers[field_indexes["bank_account"]]) if "bank_account" in field_indexes else None
                 if ov.get("account_clean"):
                     bank = str(ov["account_clean"])
                 elif bank_raw:
