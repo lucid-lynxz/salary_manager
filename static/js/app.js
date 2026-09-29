@@ -481,6 +481,7 @@ async function parseSalary() {
         const skipRows = parseHeaderRows($('#salary-skip-rows').value);
 
         const salaryFieldMapping = {
+            bank_account: $('#salary-bank-account-col').value,
             gross_salary: $('#salary-gross-col').value,
             total_deduction: $('#salary-deduction-col').value,
             net_salary: $('#salary-net-col').value,
@@ -509,9 +510,11 @@ async function parseSalary() {
 
         // 填充工资字段列下拉框，优先使用用户已选值，其次用后端自动检测值
         const detected = res.detected_salary_fields || {};
+        const bankSel = $('#salary-bank-account-col').value;
         const grossSel = $('#salary-gross-col').value;
         const dedSel = $('#salary-deduction-col').value;
         const netSel = $('#salary-net-col').value;
+        populateSelect($('#salary-bank-account-col'), headers, bankSel !== '' ? parseInt(bankSel) : (detected.bank_account ?? -1));
         populateSelect($('#salary-gross-col'), headers, grossSel !== '' ? parseInt(grossSel) : (detected.gross_salary ?? -1));
         populateSelect($('#salary-deduction-col'), headers, dedSel !== '' ? parseInt(dedSel) : (detected.total_deduction ?? -1));
         populateSelect($('#salary-net-col'), headers, netSel !== '' ? parseInt(netSel) : (detected.net_salary ?? -1));
@@ -1434,6 +1437,7 @@ $('#do-import').addEventListener('click', async () => {
         community: parseInt($('#salary-community-col').value),
     };
     const salaryFieldMapping = {
+        bank_account: $('#salary-bank-account-col').value,
         gross_salary: $('#salary-gross-col').value,
         total_deduction: $('#salary-deduction-col').value,
         net_salary: $('#salary-net-col').value,
