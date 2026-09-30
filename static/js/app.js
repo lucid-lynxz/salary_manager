@@ -1,12 +1,13 @@
 // State
 const state = {
-    salary: { fileId: null, filename: null, config: null, parsed: null, preview: null, previewRowIndices: [], mapping: null, validationState: null, overrides: {}, fullPreview: false },
-    email: { fileId: null, filename: null, config: null, parsed: null, preview: null, previewRowIndices: [], mapping: null, overrides: {}, overrideLog: {}, validationState: null },
+    salary: { fileId: null, filename: null, config: null, parsed: null, preview: null, previewRowIndices: [], mapping: null, validationState: null, overrides: {}, fullPreview: false, previewPage: 1, previewPageSize: 20 },
+    email: { fileId: null, filename: null, config: null, parsed: null, preview: null, previewRowIndices: [], mapping: null, overrides: {}, overrideLog: {}, validationState: null, fullPreview: false, previewPage: 1, previewPageSize: 20 },
     currentStep: 1,
     unlockedSteps: { 1: true },
     detectedYear: null,
     detectedMonth: null,
     savedConfig: null,
+    importPreview: { headers: null, rows: null, fullPreview: false, page: 1, pageSize: 20, total: 0, matched: 0, unmatched: 0, onlyUnmatched: false },
 };
 
 // Utility
@@ -200,12 +201,14 @@ function saveCurrentConfig() {
     }, 800);
 }
 
-function renderTable(tableEl, rows, startRow, headerRows, rowIndices) {
+function renderTable(tableEl, rows, startRow, headerRows, rowIndices, pagination, freezeCols) {
     tableEl.innerHTML = '';
     if (!rows || !rows.length) return;
     startRow = startRow || 1;
     headerRows = headerRows || [];
     rowIndices = rowIndices || [];
+    pagination = pagination || null;
+    freezeCols = freezeCols || []; // 0-based 数据列索引数组，按从左到右冻结顺序排列
     // 根据 rowIndices 定位最后一个表头行的位置，兼容跳过行后的行偏移
     const headerCount = (() => {
         if (!headerRows.length) return 1;
@@ -214,6 +217,38 @@ function renderTable(tableEl, rows, startRow, headerRows, rowIndices) {
         return idx >= 0 ? idx + 1 : maxHeader;
     })();
     const colCount = rows[0].length;
+
+    // 数据行（表头之后的部分）
+    let dataRows = rows.slice(headerCount);
+    let dataRowIndices = rowIndices.slice(headerCount);
+    let pageInfo = null;
+    if (pagination) {
+        const totalPages = Math.max(1, Math.ceil(dataRows.length / pagination.pageSize));
+        let page = pagination.page;
+        if (page > totalPages) page = totalPages;
+        if (page < 1) page = 1;
+        const start = (page - 1) * pagination.pageSize;
+        const end = Math.min(start + pagination.pageSize, dataRows.length);
+        pageInfo = { page, pageSize: pagination.pageSize, total: dataRows.length, totalPages, start, end };
+        if (dataRows.length > pagination.pageSize) {
+            dataRows = dataRows.slice(start, end);
+            dataRowIndices = dataRowIndices.slice(start, end);
+        }
+    }
+
+    const freezeSet = new Set(freezeCols);
+    const freezeOrder = new Map(); // colIdx -> 1, 2, ...
+    freezeCols.forEach((c, i) => freezeOrder.set(c, i + 1));
+
+    const buildCell = (cell, isHeader, colIdx) => {
+        const el = document.createElement(isHeader ? 'th' : 'td');
+        el.textContent = formatPreviewCell(cell);
+        if (freezeSet.has(colIdx)) {
+            el.classList.add('freeze-col', `freeze-${freezeOrder.get(colIdx)}`);
+            if (colIdx === freezeCols[freezeCols.length - 1]) el.classList.add('freeze-last');
+        }
+        return el;
+    };
 
     const thead = document.createElement('thead');
 
@@ -226,6 +261,10 @@ function renderTable(tableEl, rows, startRow, headerRows, rowIndices) {
     for (let i = 0; i < colCount; i++) {
         const th = document.createElement('th');
         th.innerHTML = `${escapeHtml(colIndexToLetters(i))}<span class="col-number">列${i + 1}</span>`;
+        if (freezeSet.has(i)) {
+            th.classList.add('freeze-col', `freeze-${freezeOrder.get(i)}`);
+            if (i === freezeCols[freezeCols.length - 1]) th.classList.add('freeze-last');
+        }
         letterTr.appendChild(th);
     }
     thead.appendChild(letterTr);
@@ -239,20 +278,15 @@ function renderTable(tableEl, rows, startRow, headerRows, rowIndices) {
         rowTh.className = 'row-header';
         rowTh.textContent = rowIndices[idx] ?? startRow + idx;
         tr.appendChild(rowTh);
-        row.forEach(cell => {
-            const td = document.createElement('td');
-            td.textContent = formatPreviewCell(cell);
-            tr.appendChild(td);
-        });
+        row.forEach((cell, ci) => tr.appendChild(buildCell(cell, true, ci)));
         thead.appendChild(tr);
     }
     tableEl.appendChild(thead);
 
     // 数据行
     const tbody = document.createElement('tbody');
-    for (let idx = headerCount; idx < rows.length; idx++) {
-        const row = rows[idx];
-        const excelRow = rowIndices[idx];
+    dataRows.forEach((row, i) => {
+        const excelRow = dataRowIndices[i];
         // 省略标记行：数组长度明显短于列数且内容以 ... 开头
         if (row.length === 1 && typeof row[0] === 'string' && row[0].startsWith('...')) {
             const tr = document.createElement('tr');
@@ -263,21 +297,49 @@ function renderTable(tableEl, rows, startRow, headerRows, rowIndices) {
             td.textContent = row[0];
             tr.appendChild(td);
             tbody.appendChild(tr);
-            continue;
+            return;
         }
         const tr = document.createElement('tr');
         const rowTh = document.createElement('th');
         rowTh.className = 'row-header';
-        rowTh.textContent = excelRow ?? startRow + idx;
+        rowTh.textContent = excelRow ?? startRow + headerCount + i;
         tr.appendChild(rowTh);
-        row.forEach(cell => {
-            const td = document.createElement('td');
-            td.textContent = formatPreviewCell(cell);
-            tr.appendChild(td);
-        });
+        row.forEach((cell, ci) => tr.appendChild(buildCell(cell, false, ci)));
         tbody.appendChild(tr);
-    }
+    });
     tableEl.appendChild(tbody);
+
+    // 设置表头行 top 偏移 + 冻结列的 left 偏移
+    requestAnimationFrame(() => {
+        const theadRows = tableEl.querySelectorAll('thead tr');
+        let topAcc = 0;
+        theadRows.forEach(tr => {
+            tr.querySelectorAll('th, td').forEach(cell => { cell.style.top = topAcc + 'px'; });
+            topAcc += tr.offsetHeight;
+        });
+
+        if (freezeCols.length) {
+            const firstRowHeader = tableEl.querySelector('tbody th.row-header') || tableEl.querySelector('thead th.row-header');
+            const rowHeaderW = firstRowHeader ? firstRowHeader.offsetWidth : 44;
+            let accumulated = rowHeaderW;
+            freezeCols.forEach((c, i) => {
+                const sample = tableEl.querySelector(`tbody td.freeze-${i + 1}`) || tableEl.querySelector(`thead th.freeze-${i + 1}`);
+                const w = sample ? sample.offsetWidth : 0;
+                const left = accumulated;
+                tableEl.querySelectorAll(`.freeze-${i + 1}`).forEach(el => { el.style.left = left + 'px'; });
+                accumulated += w;
+            });
+        }
+    });
+
+    // 返回分页信息供外部渲染分页控件
+    return pageInfo;
+}
+
+function getFreezeCols(mapping) {
+    if (!mapping) return [];
+    const cols = [mapping.community, mapping.name].filter(v => v != null && v !== '');
+    return [...new Set(cols)].sort((a, b) => a - b);
 }
 
 function renderSalaryPreview() {
@@ -285,7 +347,10 @@ function renderSalaryPreview() {
     const skipRows = parseHeaderRows($('#salary-skip-rows').value);
     const filtered = filterPreviewBySkipRows(state.salary.preview, state.salary.previewRowIndices, skipRows);
     const sliced = slicePreviewByEndCol(filtered.rows, $('#salary-data-end-col').value, filtered.rowIndices);
-    renderTable($('#salary-preview-table'), sliced.rows, 1, parseHeaderRows($('#salary-header-rows').value), sliced.rowIndices);
+    const pagination = state.salary.fullPreview ? { page: state.salary.previewPage, pageSize: state.salary.previewPageSize } : null;
+    const freezeCols = getFreezeCols(state.salary.mapping);
+    const pageInfo = renderTable($('#salary-preview-table'), sliced.rows, 1, parseHeaderRows($('#salary-header-rows').value), sliced.rowIndices, pagination, freezeCols);
+    renderPreviewPagination('salary', pageInfo);
 }
 
 function renderEmailPreview() {
@@ -293,7 +358,86 @@ function renderEmailPreview() {
     const skipRows = parseHeaderRows($('#email-skip-rows').value);
     const filtered = filterPreviewBySkipRows(state.email.preview, state.email.previewRowIndices, skipRows);
     const sliced = slicePreviewByEndCol(filtered.rows, $('#email-data-end-col').value, filtered.rowIndices);
-    renderTable($('#email-preview-table'), sliced.rows, 1, parseHeaderRows($('#email-header-rows').value), sliced.rowIndices);
+    const pagination = state.email.fullPreview ? { page: state.email.previewPage, pageSize: state.email.previewPageSize } : null;
+    const freezeCols = getFreezeCols(state.email.mapping);
+    const pageInfo = renderTable($('#email-preview-table'), sliced.rows, 1, parseHeaderRows($('#email-header-rows').value), sliced.rowIndices, pagination, freezeCols);
+    renderPreviewPagination('email', pageInfo);
+}
+
+// 预览表格分页控件（只在全量模式且数据量超过单页时显示）
+const PREVIEW_PAGE_SIZES = [10, 20, 50, 100, 500];
+
+// 固定 3 个页码按钮，按当前页居中（边界处自动贴边）
+function getFixedPages(page, totalPages) {
+    if (totalPages <= 3) return Array.from({ length: totalPages }, (_, i) => i + 1);
+    let start = page - 1;
+    if (start < 1) start = 1;
+    if (start + 2 > totalPages) start = totalPages - 2;
+    return [start, start + 1, start + 2];
+}
+
+function renderPreviewPagination(kind, pageInfo) {
+    const wrap = $(`#${kind}-preview-table`).closest('.table-wrap');
+    let bar = wrap.nextElementSibling;
+    if (!bar || !bar.classList.contains('preview-pagination-bar')) {
+        bar = document.createElement('div');
+        bar.className = 'pagination-bar preview-pagination-bar';
+        wrap.parentNode.insertBefore(bar, wrap.nextSibling);
+    }
+    if (!pageInfo) { bar.innerHTML = ''; return; }
+
+    const { page, pageSize, total, totalPages } = pageInfo;
+    const start = (page - 1) * pageSize;
+    const end = Math.min(start + pageSize, total);
+
+    const fixedPages = getFixedPages(page, totalPages);
+    const pageBtns = fixedPages.map(p =>
+        `<button class="page-btn page-num ${p === page ? 'active' : ''}" data-page="${p}">${p}</button>`
+    ).join('');
+
+    bar.innerHTML = `
+        <div class="pagination-info">第 ${start + 1}-${end} 条 / 共 ${total} 条</div>
+        <div class="pagination-controls">
+            <button class="page-btn nav-btn" data-page="1" ${page === 1 ? 'disabled' : ''}>首页</button>
+            <button class="page-btn nav-btn" data-page="${page - 1}" ${page === 1 ? 'disabled' : ''}>上一页</button>
+            ${pageBtns}
+            <button class="page-btn nav-btn" data-page="${page + 1}" ${page === totalPages ? 'disabled' : ''}>下一页</button>
+            <button class="page-btn nav-btn" data-page="${totalPages}" ${page === totalPages ? 'disabled' : ''}>末页</button>
+        </div>
+        <div class="page-size-select">
+            每页
+            <select class="preview-page-size">
+                ${PREVIEW_PAGE_SIZES.map(s => `<option value="${s}" ${s === pageSize ? 'selected' : ''}>${s}</option>`).join('')}
+            </select>
+            条
+        </div>`;
+
+    bar.querySelectorAll('.page-btn[data-page]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const p = parseInt(btn.dataset.page);
+            if (!isNaN(p) && p >= 1 && p <= totalPages) {
+                if (kind === 'import') {
+                    state.importPreview.page = p;
+                    renderImportPreview();
+                } else {
+                    state[kind].previewPage = p;
+                    if (kind === 'salary') renderSalaryPreview(); else renderEmailPreview();
+                }
+            }
+        });
+    });
+    bar.querySelector('.preview-page-size').addEventListener('change', (e) => {
+        const size = parseInt(e.target.value);
+        if (kind === 'import') {
+            state.importPreview.pageSize = size;
+            state.importPreview.page = 1;
+            renderImportPreview();
+        } else {
+            state[kind].previewPageSize = size;
+            state[kind].previewPage = 1;
+            if (kind === 'salary') renderSalaryPreview(); else renderEmailPreview();
+        }
+    });
 }
 
 function populateSelect(selectEl, headers, selectedIndex) {
@@ -353,7 +497,12 @@ $('#wizard-steps').addEventListener('click', (e) => {
     const stepEl = e.target.closest('.step');
     if (!stepEl) return;
     const n = parseInt(stepEl.dataset.step);
-    if (state.unlockedSteps[n]) goStep(n);
+    if (!state.unlockedSteps[n]) return;
+    goStep(n);
+    if (n === 3) {
+        buildSummary();
+        loadImportPreview();
+    }
 });
 
 $('#to-step2').addEventListener('click', () => goStep(2));
@@ -361,6 +510,7 @@ $('#back-to-step1').addEventListener('click', () => goStep(1));
 $('#to-step3').addEventListener('click', () => {
     buildSummary();
     goStep(3);
+    loadImportPreview();
 });
 $('#back-to-step2').addEventListener('click', () => goStep(2));
 
@@ -368,6 +518,10 @@ $('#back-to-step2').addEventListener('click', () => goStep(2));
 $('#salary-file').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    state.salary.fullPreview = false;
+    state.salary.previewPage = 1;
+    const fullBtn = $('#salary-full-preview-btn');
+    if (fullBtn) fullBtn.classList.remove('active');
     try {
         const data = await uploadFile(file, 'salary', state.salary.fullPreview);
         if (data.error) { alert(data.error); return; }
@@ -432,6 +586,7 @@ $('#salary-preview-btn').addEventListener('click', parseSalary);
 $('#salary-full-preview-btn').addEventListener('click', async () => {
     const btn = $('#salary-full-preview-btn');
     state.salary.fullPreview = !state.salary.fullPreview;
+    state.salary.previewPage = 1;
     btn.classList.toggle('active', state.salary.fullPreview);
     if (!state.salary.fileId) return;
     try {
@@ -528,11 +683,14 @@ async function parseSalary() {
                 resultHtml += `，跳过 ${res.validation.skipped_empty} 条社区/姓名为空的行`;
             }
         }
-        resultHtml += `</p>
+        resultHtml += ` <button type="button" class="help-icon-btn" id="salary-validation-help" title="查看校验说明">?</button></p>
             <p>建议列映射：姓名=${mapping.name !== undefined ? headers[mapping.name] : '未识别'}, 社区=${mapping.community !== undefined ? headers[mapping.community] : '未识别'}</p>
         `;
         resultEl.innerHTML = resultHtml;
         show(resultEl);
+
+        const helpBtn = $('#salary-validation-help');
+        if (helpBtn) helpBtn.addEventListener('click', showValidationHelp);
 
         initSalaryValidationState(res.validation);
         renderSalaryValidation();
@@ -545,6 +703,7 @@ async function parseSalary() {
         );
         updateSalaryNextButton();
         unlockStep(2);
+        renderSalaryPreview();
     } catch (err) {
         console.error(err);
         alert('解析工资表失败：' + err.message);
@@ -1010,6 +1169,10 @@ function renderSalaryValidation() {
 $('#email-file').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    state.email.fullPreview = false;
+    state.email.previewPage = 1;
+    const fullBtn = $('#email-full-preview-btn');
+    if (fullBtn) fullBtn.classList.remove('active');
     try {
         const data = await uploadFile(file, 'email');
         if (data.error) { alert(data.error); return; }
@@ -1047,6 +1210,7 @@ $('#email-sheet').addEventListener('change', async () => {
             file_id: state.email.fileId,
             sheet_name: $('#email-sheet').value,
             file_type: 'email',
+            full_preview: state.email.fullPreview,
         });
         if (data.error) { alert(data.error); return; }
         state.email.sheetData = data;
@@ -1062,6 +1226,29 @@ $('#email-sheet').addEventListener('change', async () => {
 });
 
 $('#email-preview-btn').addEventListener('click', parseEmail);
+
+$('#email-full-preview-btn').addEventListener('click', async () => {
+    const btn = $('#email-full-preview-btn');
+    state.email.fullPreview = !state.email.fullPreview;
+    state.email.previewPage = 1;
+    btn.classList.toggle('active', state.email.fullPreview);
+    if (!state.email.fileId) return;
+    try {
+        const data = await postJson('/api/sheet-preview', {
+            file_id: state.email.fileId,
+            sheet_name: $('#email-sheet').value,
+            file_type: 'email',
+            full_preview: state.email.fullPreview,
+        });
+        if (data.error) { alert(data.error); return; }
+        state.email.preview = data.preview;
+        state.email.previewRowIndices = data.preview_row_indices || [];
+        renderEmailPreview();
+    } catch (err) {
+        console.error(err);
+        alert('刷新预览失败：' + err.message);
+    }
+});
 
 $('#email-header-rows').addEventListener('input', () => {
     updateDataStartFromHeaders('#email-header-rows', '#email-data-start');
@@ -1112,6 +1299,7 @@ async function parseEmail() {
         renderValidation();
         updateStep3Button();
         unlockStep(3);
+        renderEmailPreview();
     } catch (err) {
         console.error(err);
         alert('解析邮箱表失败：' + err.message);
@@ -1307,6 +1495,7 @@ function renderValidation() {
         <div class="stats">
             <div class="stat valid">有效：${vs.valid} / ${vs.total}</div>
             <div class="stat invalid">无效：${vs.invalid} / ${vs.total}</div>
+            <button type="button" class="help-icon-btn" id="email-validation-help" title="查看校验说明">?</button>
         </div>
     `;
 
@@ -1377,6 +1566,9 @@ function renderValidation() {
 
     el.innerHTML = html;
 
+    const emailHelpBtn = $('#email-validation-help');
+    if (emailHelpBtn) emailHelpBtn.addEventListener('click', showValidationHelp);
+
     // Bind events
     el.querySelectorAll('[data-confirm-row]').forEach(btn => {
         btn.addEventListener('click', () => confirmDuplicateRow(parseInt(btn.dataset.confirmRow), parseInt(btn.dataset.row)));
@@ -1431,7 +1623,8 @@ function buildSummary() {
     `;
 }
 
-$('#do-import').addEventListener('click', async () => {
+// 构建导入/预览用的 salary + email 配置
+function buildImportConfig() {
     const salaryMapping = {
         name: parseInt($('#salary-name-col').value),
         community: parseInt($('#salary-community-col').value),
@@ -1447,9 +1640,7 @@ $('#do-import').addEventListener('click', async () => {
         community: parseInt($('#email-community-col').value),
         email: parseInt($('#email-col').value),
     };
-    const body = {
-        year: parseInt($('#salary-year').value),
-        month: parseInt($('#salary-month').value),
+    return {
         salary: {
             file_id: state.salary.fileId,
             filename: state.salary.filename,
@@ -1475,6 +1666,85 @@ $('#do-import').addEventListener('click', async () => {
             mapping: emailMapping,
             overrides: state.email.overrides,
         },
+    };
+}
+
+// 加载并渲染合并预览
+async function loadImportPreview() {
+    if (!state.salary.fileId || !state.email.fileId) return;
+    const table = $('#import-preview-table');
+    table.innerHTML = '<tr><td>正在加载合并预览...</td></tr>';
+    try {
+        const cfg = buildImportConfig();
+        const res = await postJson('/api/import-preview', cfg);
+        if (res.error) { table.innerHTML = `<tr><td>加载失败：${escapeHtml(res.error)}</td></tr>`; return; }
+        state.importPreview.headers = res.headers;
+        state.importPreview.rows = res.rows;
+        state.importPreview.total = res.total;
+        state.importPreview.matched = res.matched;
+        state.importPreview.unmatched = res.unmatched;
+        state.importPreview.onlyUnmatched = false;
+        $('#import-preview-unmatched-btn').classList.remove('active');
+        $('#import-preview-stats').textContent =
+            `共 ${res.total} 条，已匹配邮箱 ${res.matched} 条，未匹配 ${res.unmatched} 条`;
+        renderImportPreview();
+    } catch (err) {
+        console.error(err);
+        table.innerHTML = `<tr><td>加载失败：${escapeHtml(err.message)}</td></tr>`;
+    }
+}
+
+function renderImportPreview() {
+    const { headers, rows, fullPreview, page, pageSize, onlyUnmatched } = state.importPreview;
+    if (!headers || !rows) return;
+    // 未匹配筛选：邮箱列（最后一列）为空
+    let sourceRows = rows;
+    if (onlyUnmatched) {
+        const emailIdx = headers.length - 1;
+        sourceRows = rows.filter(r => !r[emailIdx]);
+    }
+    let displayRows = sourceRows;
+    let rowIndices = sourceRows.map((_, i) => i + 2);
+    if (!fullPreview && sourceRows.length > 10) {
+        const head = sourceRows.slice(0, 5);
+        const tail = sourceRows.slice(-5);
+        displayRows = [...head, ['...'], ...tail];
+        const headIdx = head.map((_, i) => i + 2);
+        const tailIdx = tail.map((_, i) => sourceRows.length - 5 + i + 2);
+        rowIndices = [...headIdx, 0, ...tailIdx];
+    }
+    const allRows = [headers, ...displayRows];
+    const allIndices = [1, ...rowIndices];
+    const pagination = fullPreview ? { page, pageSize } : null;
+    const communityIdx = headers.indexOf('社区');
+    const nameIdx = headers.indexOf('姓名');
+    const freezeCols = [communityIdx, nameIdx].filter(i => i >= 0).sort((a, b) => a - b);
+    const pageInfo = renderTable($('#import-preview-table'), allRows, 1, [1], allIndices, pagination, freezeCols);
+    renderPreviewPagination('import', pageInfo);
+}
+
+// 导入预览全量按钮
+$('#import-preview-full-btn').addEventListener('click', () => {
+    state.importPreview.fullPreview = !state.importPreview.fullPreview;
+    state.importPreview.page = 1;
+    $('#import-preview-full-btn').classList.toggle('active', state.importPreview.fullPreview);
+    renderImportPreview();
+});
+
+// 仅看未匹配按钮
+$('#import-preview-unmatched-btn').addEventListener('click', () => {
+    state.importPreview.onlyUnmatched = !state.importPreview.onlyUnmatched;
+    state.importPreview.page = 1;
+    $('#import-preview-unmatched-btn').classList.toggle('active', state.importPreview.onlyUnmatched);
+    renderImportPreview();
+});
+
+$('#do-import').addEventListener('click', async () => {
+    const cfg = buildImportConfig();
+    const body = {
+        year: parseInt($('#salary-year').value),
+        month: parseInt($('#salary-month').value),
+        ...cfg,
     };
     const box = $('#import-result');
     show(box);
@@ -1680,7 +1950,44 @@ function escapeHtml(str) {
         .replace(/'/g, '&#039;');
 }
 
+function showValidationHelp() {
+    $('#modal').classList.remove('import-detail-modal');
+    const body = $('#modal-body');
+    let html = `<h2>校验说明</h2>
+        <p style="color:var(--muted);margin-top:-8px">系统在解析工资表与邮箱表时会自动执行以下校验，存在问题的记录需确认或修改后才能进入下一步。</p>
+
+        <h3 style="margin-top:20px">一、工资表校验</h3>
+        <ul class="help-list">
+            <li><strong>空行跳过</strong>：社区或姓名为空的行会被自动跳过，不计入有效工资记录。</li>
+            <li><strong>重复银行卡号</strong>：同一银行卡号出现在多条记录中时，需确认是否为正常共用账号，或修改为正确账号。</li>
+            <li><strong>账号变化</strong>：与上次导入的同社区 + 姓名人员银行卡号不一致时，需确认是否为正常变更。（仅在存在历史导入数据时执行）</li>
+            <li><strong>实发工资对不上</strong>：当「应发工资 - 代扣合计 ≠ 实发工资」且差额超过 0.02 时，需确认数据是否正确，可直接修改。（需检测到应发工资、代扣合计、实发工资三列）</li>
+            <li><strong>账号为空</strong>：银行卡号列为空时，需补充正确账号或确认留空。</li>
+            <li><strong>未检测到银行卡号列</strong>：若系统未自动识别到银行卡号列，相关校验不会执行，请手动指定银行卡号列后重新解析。</li>
+        </ul>
+
+        <h3 style="margin-top:20px">二、邮箱表校验</h3>
+        <ul class="help-list">
+            <li><strong>邮箱为空</strong>：邮箱地址为空，属于无效邮箱。</li>
+            <li><strong>缺少 @ 符号</strong>：邮箱地址中没有 @ 符号，格式不正确。</li>
+            <li><strong>邮箱格式无效</strong>：邮箱地址不符合标准格式要求。</li>
+            <li><strong>邮箱重复</strong>：同一邮箱被多人使用时，需确认是否为正常共用邮箱，或修改为正确邮箱。</li>
+        </ul>
+
+        <h3 style="margin-top:20px">三、说明</h3>
+        <ul class="help-list">
+            <li>所有待确认的问题均需逐条「确认」后才能进入下一步，防止错误数据被导入。</li>
+            <li>对有问题的数据可点击「编辑/修改」直接修正，保存后系统会重新计算校验结果。</li>
+            <li>银行卡号会自动去除空格、横线等非数字字符后再参与校验。</li>
+            <li>邮箱会自动去除空白字符、将全角 @ 转为半角、并统一转为小写后再校验。</li>
+        </ul>
+    `;
+    body.innerHTML = html;
+    show($('#modal'));
+}
+
 async function showPersonDetail(id, year, month) {
+    $('#modal').classList.remove('import-detail-modal');
     let url = `/api/person/${id}`;
     if (year && month) url += `?year=${year}&month=${month}`;
     const r = await fetch(url).then(r => r.json());
@@ -1705,9 +2012,9 @@ async function showPersonDetail(id, year, month) {
     show($('#modal'));
 }
 
-$('.close-btn').addEventListener('click', () => hide($('#modal')));
+$('.close-btn').addEventListener('click', () => { $('#modal').classList.remove('import-detail-modal'); hide($('#modal')); });
 $('#modal').addEventListener('click', (e) => {
-    if (e.target === $('#modal')) hide($('#modal'));
+    if (e.target === $('#modal')) { $('#modal').classList.remove('import-detail-modal'); hide($('#modal')); }
 });
 
 // History
@@ -1722,6 +2029,7 @@ async function loadHistory() {
     res.forEach(item => {
         const div = document.createElement('div');
         div.className = 'history-item';
+        div.title = '双击查看本次导入的完整数据表';
         div.innerHTML = `
             <div>
                 <strong>${item.year}年${item.month}月</strong>
@@ -1731,13 +2039,154 @@ async function loadHistory() {
             </div>
             <button class="btn danger" data-id="${item.id}">删除</button>
         `;
-        div.querySelector('button').addEventListener('click', async () => {
+        div.querySelector('button').addEventListener('click', async (e) => {
+            e.stopPropagation();
             if (!confirm('确定删除这条导入记录及其所有人员工资数据吗？')) return;
             await fetch(`/api/import/${item.id}`, { method: 'DELETE' });
             loadHistory();
         });
+        div.addEventListener('dblclick', () => showImportDetail(item.id));
         el.appendChild(div);
     });
+}
+
+async function showImportDetail(importId) {
+    const body = $('#modal-body');
+    body.innerHTML = '<p>加载中...</p>';
+    show($('#modal'));
+    try {
+        const r = await fetch(`/api/import/${importId}/records`).then(r => r.json());
+        if (r.error) { body.innerHTML = `<p style="color:var(--danger)">${escapeHtml(r.error)}</p>`; return; }
+
+        const records = r.records || [];
+        // 收集 detail 中所有列名（保持首次出现顺序）
+        const detailCols = [];
+        const seen = new Set();
+        records.forEach(rec => {
+            Object.keys(rec.detail || {}).forEach(k => {
+                if (!seen.has(k)) { seen.add(k); detailCols.push(k); }
+            });
+        });
+
+        // 分页状态
+        const PAGE_SIZES = [10, 20, 50, 100, 500];
+        let pageSize = 20;
+        let currentPage = 1;
+
+        const metaHtml = `<h2>${r.year}年${r.month}月 导入数据</h2>
+            <p style="color:var(--muted);margin-top:-8px;font-size:13px">
+                工资表：${escapeHtml(r.salary_filename || '-')} | 邮箱表：${escapeHtml(r.email_filename || '-')} | 共 <strong>${records.length}</strong> 条记录
+            </p>`;
+
+        if (!records.length) {
+            body.innerHTML = metaHtml + '<p>暂无记录。</p>';
+            return;
+        }
+
+        // 构建表头（固定）
+        const theadHtml = `<thead><tr>
+            <th class="freeze-1">社区</th><th class="freeze-2">姓名</th>
+            <th>应发工资</th><th>代扣合计</th><th>实发工资</th><th>银行卡号</th>
+            ${detailCols.map(col => `<th>${escapeHtml(col)}</th>`).join('')}
+            <th>邮箱</th>
+        </tr></thead>`;
+
+        function rowHtml(rec) {
+            return `<tr>
+                <td class="freeze-1">${escapeHtml(rec.community)}</td>
+                <td class="freeze-2">${escapeHtml(rec.name)}</td>
+                <td>${rec.gross_salary != null ? rec.gross_salary : ''}</td>
+                <td>${rec.total_deduction != null ? rec.total_deduction : ''}</td>
+                <td>${rec.net_salary != null ? rec.net_salary : ''}</td>
+                <td>${escapeHtml(rec.bank_account || '')}</td>
+                ${detailCols.map(col => {
+                    const v = (rec.detail || {})[col];
+                    return `<td>${escapeHtml(v == null ? '' : String(v))}</td>`;
+                }).join('')}
+                <td>${escapeHtml(rec.email || '-')}</td>
+            </tr>`;
+        }
+
+        function pagerHtml() {
+            const totalPages = Math.ceil(records.length / pageSize);
+            if (currentPage > totalPages) currentPage = totalPages;
+            const start = (currentPage - 1) * pageSize;
+            const end = Math.min(start + pageSize, records.length);
+
+            // 固定 3 个页码按钮，按当前页居中
+            const fixedPages = getFixedPages(currentPage, totalPages);
+            const pageBtns = fixedPages.map(p =>
+                `<button class="page-btn page-num ${p === currentPage ? 'active' : ''}" data-page="${p}">${p}</button>`
+            ).join('');
+
+            return `
+            <div class="pagination-bar">
+                <div class="pagination-info">第 ${start + 1}-${end} 条 / 共 ${records.length} 条</div>
+                <div class="pagination-controls">
+                    <button class="page-btn nav-btn" data-page="1" ${currentPage === 1 ? 'disabled' : ''}>首页</button>
+                    <button class="page-btn nav-btn" data-page="${currentPage - 1}" ${currentPage === 1 ? 'disabled' : ''}>上一页</button>
+                    ${pageBtns}
+                    <button class="page-btn nav-btn" data-page="${currentPage + 1}" ${currentPage === totalPages ? 'disabled' : ''}>下一页</button>
+                    <button class="page-btn nav-btn" data-page="${totalPages}" ${currentPage === totalPages ? 'disabled' : ''}>末页</button>
+                </div>
+                <div class="page-size-select">
+                    每页
+                    <select id="page-size-select">
+                        ${PAGE_SIZES.map(s => `<option value="${s}" ${s === pageSize ? 'selected' : ''}>${s}</option>`).join('')}
+                    </select>
+                    条
+                </div>
+            </div>`;
+        }
+
+        function renderTable() {
+            const totalPages = Math.ceil(records.length / pageSize);
+            const start = (currentPage - 1) * pageSize;
+            const pageRecords = records.slice(start, start + pageSize);
+
+            let html = metaHtml;
+            html += `<div class="import-detail-wrap" id="import-detail-wrap">
+                <table class="import-detail-table">${theadHtml}<tbody>
+                    ${pageRecords.map(rowHtml).join('')}
+                </tbody></table></div>`;
+            html += pagerHtml();
+            body.innerHTML = html;
+
+            // 绑定分页事件
+            body.querySelectorAll('.page-btn[data-page]').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const p = parseInt(btn.dataset.page);
+                    if (!isNaN(p) && p >= 1 && p <= totalPages && p !== currentPage) {
+                        currentPage = p;
+                        renderTable();
+                    }
+                });
+            });
+            const sizeSel = $('#page-size-select');
+            if (sizeSel) {
+                sizeSel.addEventListener('change', () => {
+                    pageSize = parseInt(sizeSel.value);
+                    currentPage = 1;
+                    renderTable();
+                });
+            }
+
+            // 根据第一列实际宽度设置第二列的 left 偏移
+            requestAnimationFrame(() => {
+                const wrap = $('#import-detail-wrap');
+                const firstTh = wrap && wrap.querySelector('thead th.freeze-1');
+                if (firstTh) {
+                    wrap.style.setProperty('--freeze-1-width', firstTh.offsetWidth + 'px');
+                }
+            });
+        }
+
+        $('#modal').classList.add('import-detail-modal');
+        renderTable();
+    } catch (err) {
+        console.error(err);
+        body.innerHTML = `<p style="color:var(--danger)">加载失败：${escapeHtml(err.message)}</p>`;
+    }
 }
 
 // Init

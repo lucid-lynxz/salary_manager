@@ -798,6 +798,84 @@ def api_parse_config():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/import-preview", methods=["POST"])
+def api_import_preview():
+    """合并工资表与邮箱表（按社区+姓名），返回二维数组供前端预览，不写入数据库。"""
+    data = request.get_json() or {}
+    salary_cfg = data.get("salary") or {}
+    email_cfg = data.get("email") or {}
+
+    if not salary_cfg or not email_cfg:
+        return jsonify({"error": "请同时配置工资表和邮箱表"}), 400
+
+    salary_path = UPLOAD_DIR / salary_cfg["file_id"]
+    email_path = UPLOAD_DIR / email_cfg["file_id"]
+    if not salary_path.exists() or not email_path.exists():
+        return jsonify({"error": "上传文件已失效，请重新上传"}), 400
+
+    try:
+        # 解析邮箱表
+        edf = read_excel_raw(email_path, email_cfg["sheet_name"])
+        edf = apply_column_limit(edf, email_cfg.get("data_end_col"))
+        e_header_rows = [int(r) - 1 for r in email_cfg.get("header_rows", [1])]
+        e_data_start = int(email_cfg.get("data_start_row", 2)) - 1
+        e_data_end = int(email_cfg["data_end_row"]) if email_cfg.get("data_end_row") else None
+        e_mapping = email_cfg.get("mapping", {})
+        email_records, _ = parse_records(edf, e_header_rows, e_data_start, e_data_end, e_mapping,
+                                         skip_rows=email_cfg.get("skip_rows", []), is_email=True)
+
+        overrides = email_cfg.get("overrides") or {}
+        email_map = {}
+        for r in email_records:
+            key = (r.get("community", "").strip(), r.get("name", "").strip())
+            if not key[0] or not key[1]:
+                continue
+            raw_email = overrides.get(f"{key[0]}|{key[1]}", r.get("email", ""))
+            email, _, errs = validate_email(raw_email, set())
+            email_map[key] = email
+
+        # 解析工资表
+        sdf = read_excel_raw(salary_path, salary_cfg["sheet_name"])
+        sdf = apply_column_limit(sdf, salary_cfg.get("data_end_col"))
+        s_header_rows = [int(r) - 1 for r in salary_cfg.get("header_rows", [3])]
+        s_data_start = int(salary_cfg.get("data_start_row", 5)) - 1
+        s_data_end = int(salary_cfg["data_end_row"]) if salary_cfg.get("data_end_row") else None
+        s_mapping = salary_cfg.get("mapping", {})
+        salary_records, salary_headers = parse_records(
+            sdf, s_header_rows, s_data_start, s_data_end, s_mapping,
+            skip_rows=salary_cfg.get("skip_rows", []), is_email=False
+        )
+
+        headers = list(salary_headers) + ["邮箱"]
+        rows = []
+        matched = 0
+        unmatched = 0
+        for r in salary_records:
+            community = r.get("community", "").strip()
+            name = r.get("name", "").strip()
+            if not community or not name:
+                continue
+            raw = r.get("_raw", {})
+            row_values = [raw.get(h, "") for h in salary_headers]
+            email = email_map.get((community, name), "")
+            if email:
+                matched += 1
+            else:
+                unmatched += 1
+            row_values.append(email)
+            rows.append(row_values)
+
+        return jsonify({
+            "headers": headers,
+            "rows": rows,
+            "total": len(rows),
+            "matched": matched,
+            "unmatched": unmatched,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/import", methods=["POST"])
 def api_import():
     data = request.get_json() or {}
@@ -1156,6 +1234,52 @@ def api_delete_import(import_id):
     with get_db() as conn:
         conn.execute("DELETE FROM salary_imports WHERE id = ?", (import_id,))
     return jsonify({"success": True})
+
+
+@app.route("/api/import/<int:import_id>/records", methods=["GET"])
+def api_import_records(import_id):
+    with get_db() as conn:
+        imp = conn.execute(
+            "SELECT id, year, month, salary_filename, email_filename, imported_at FROM salary_imports WHERE id = ?",
+            (import_id,),
+        ).fetchone()
+        if not imp:
+            return jsonify({"error": "导入记录不存在"}), 404
+        rows = conn.execute(
+            """
+            SELECT p.community, p.name, p.email, p.email_status, p.email_issues,
+                   sr.gross_salary, sr.total_deduction, sr.net_salary, sr.bank_account, sr.data_json
+            FROM persons p
+            JOIN salary_records sr ON sr.person_id = p.id AND sr.import_id = p.import_id
+            WHERE p.import_id = ?
+            ORDER BY p.community, p.name
+            """,
+            (import_id,),
+        ).fetchall()
+    records = []
+    for r in rows:
+        detail = json.loads(r["data_json"] or "{}")
+        records.append({
+            "community": r["community"],
+            "name": r["name"],
+            "email": r["email"],
+            "email_status": r["email_status"],
+            "email_issues": r["email_issues"],
+            "gross_salary": r["gross_salary"],
+            "total_deduction": r["total_deduction"],
+            "net_salary": r["net_salary"],
+            "bank_account": r["bank_account"],
+            "detail": detail,
+        })
+    return jsonify({
+        "id": imp["id"],
+        "year": imp["year"],
+        "month": imp["month"],
+        "salary_filename": imp["salary_filename"],
+        "email_filename": imp["email_filename"],
+        "imported_at": imp["imported_at"],
+        "records": records,
+    })
 
 
 # ---------------------------------------------------------------------------

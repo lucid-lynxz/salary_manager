@@ -197,6 +197,11 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
     gap: 12px;
     margin-top: 16px;
 }
+.import-preview-actions {
+    margin-top: 12px;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+}
 
 .step-actions {
     display: flex;
@@ -211,14 +216,22 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
 
 .preview-area, .config-panel { margin-top: 20px; }
 .table-wrap {
-    overflow-x: auto;
-    overflow-y: visible;
+    overflow: auto;
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    max-height: none;
+    max-height: 60vh;
 }
-thead {
-    /* 预览区不再竖向滚动，表头随页面自然滚动 */
+.table-wrap table {
+    border-collapse: separate;
+    border-spacing: 0;
+}
+.table-wrap thead th,
+.table-wrap thead td {
+    position: sticky;
+    z-index: 3;
+}
+.table-wrap thead tr:first-child th.row-header.corner {
+    z-index: 12;
 }
 tr.frozen-header-row td {
     background: #f9fafb;
@@ -238,6 +251,21 @@ th, td {
     text-align: left;
     white-space: nowrap;
 }
+.table-wrap th,
+.table-wrap td {
+    border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    border-top: none;
+    border-left: none;
+}
+.table-wrap thead th,
+.table-wrap thead td {
+    border-top: 1px solid var(--border);
+}
+.table-wrap th:first-child,
+.table-wrap td:first-child {
+    border-left: 1px solid var(--border);
+}
 th { background: #f9fafb; font-weight: 600; }
 th.row-header {
     background: #eef2ff;
@@ -251,7 +279,20 @@ th.row-header {
 }
 th.row-header.corner {
     background: #e0e7ff;
-    z-index: 11;
+    z-index: 12;
+}
+/* 预览表冻结的社区/姓名列 */
+.table-wrap th.freeze-col,
+.table-wrap td.freeze-col {
+    position: sticky;
+    background: #fff;
+    z-index: 2;
+}
+.table-wrap thead th.freeze-col { z-index: 5; background: #f9fafb; }
+.table-wrap tbody tr:nth-child(even) td.freeze-col { background: #fafafa; }
+.table-wrap td.freeze-col.freeze-last,
+.table-wrap th.freeze-col.freeze-last {
+    box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.15);
 }
 tr:nth-child(even) td { background: #fafafa; }
 tr.omitted-row td.omitted-cell {
@@ -441,6 +482,42 @@ tr.omitted-row td.omitted-cell {
     color: var(--muted);
 }
 
+.help-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    margin-left: 4px;
+    border-radius: 50%;
+    border: 1px solid var(--muted);
+    background: transparent;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    vertical-align: middle;
+    transition: all 0.15s ease;
+}
+.help-icon-btn:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--primary-light, #eef2ff);
+}
+.validation-report .stats .help-icon-btn {
+    align-self: center;
+}
+.help-list {
+    margin: 8px 0 0;
+    padding-left: 20px;
+    line-height: 1.8;
+}
+.help-list li {
+    margin-bottom: 4px;
+}
+
 .empty-tip {
     text-align: center;
     color: var(--muted);
@@ -502,6 +579,142 @@ tr.omitted-row td.omitted-cell {
 .detail-table th {
     background: var(--bg);
     font-weight: 600;
+}
+
+/* 导入历史详情：冻结表头 + 前两列（社区、姓名） */
+.import-detail-modal .modal-content {
+    max-width: 95vw;
+    width: 95vw;
+}
+.import-detail-wrap {
+    overflow: auto;
+    max-height: 70vh;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+.import-detail-table {
+    border-collapse: separate;
+    border-spacing: 0;
+    font-size: 13px;
+}
+.import-detail-table th,
+.import-detail-table td {
+    border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    padding: 8px 10px;
+    text-align: left;
+    white-space: nowrap;
+    background: #fff;
+}
+.import-detail-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    background: #f3f4f6;
+    font-weight: 600;
+}
+.import-detail-table tbody tr:nth-child(even) td { background: #fafafa; }
+/* 冻结第 1 列（社区） */
+.import-detail-table th.freeze-1,
+.import-detail-table td.freeze-1 {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: #fff;
+}
+.import-detail-table thead th.freeze-1 { z-index: 5; background: #f3f4f6; }
+.import-detail-table tbody tr:nth-child(even) td.freeze-1 { background: #fafafa; }
+/* 冻结第 2 列（姓名） */
+.import-detail-table th.freeze-2,
+.import-detail-table td.freeze-2 {
+    position: sticky;
+    left: var(--freeze-1-width, 90px);
+    z-index: 2;
+    background: #fff;
+}
+.import-detail-table thead th.freeze-2 { z-index: 5; background: #f3f4f6; }
+.import-detail-table tbody tr:nth-child(even) td.freeze-2 { background: #fafafa; }
+/* 冻结列右侧分隔线，避免滚动时与数据列重叠模糊 */
+.import-detail-table td.freeze-2,
+.import-detail-table th.freeze-2 {
+    box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.15);
+}
+
+/* 导入历史详情：分页控件 */
+.pagination-bar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    gap: 12px;
+    margin-top: 12px;
+    padding: 10px 4px;
+    font-size: 13px;
+}
+.pagination-info {
+    color: var(--muted);
+    min-width: 0;
+    white-space: nowrap;
+    justify-self: start;
+}
+.pagination-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    flex-wrap: wrap;
+    justify-self: center;
+}
+.page-size-select {
+    justify-self: end;
+    white-space: nowrap;
+}
+.page-btn {
+    box-sizing: border-box;
+    min-width: 32px;
+    height: 28px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    background: #fff;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text);
+    transition: background 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;
+}
+.page-btn.page-num {
+    min-width: 32px;
+    padding: 0;
+    text-align: center;
+}
+.page-btn.nav-btn {
+    min-width: 48px;
+}
+.page-btn:hover:not(:disabled):not(.active) {
+    border-color: var(--primary);
+    color: var(--primary);
+}
+.page-btn.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: #fff;
+    cursor: default;
+}
+.page-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    background: #fff;
+}
+.page-ellipsis {
+    padding: 0 4px;
+    color: var(--muted);
+}
+.page-size-select select {
+    padding: 4px 6px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    font-size: 13px;
+    margin: 0 4px;
+    cursor: pointer;
 }
 
 .override-log {
@@ -671,6 +884,27 @@ html[data-theme="dark"] .warning { color: #fcd34d; background: #451a03; }
 html[data-theme="dark"] .preview-table th,
 html[data-theme="dark"] .search-results-table th,
 html[data-theme="dark"] .detail-table th { background: #334155; }
+html[data-theme="dark"] .table-wrap th,
+html[data-theme="dark"] .table-wrap td { background: #1e293b; color: var(--text); }
+html[data-theme="dark"] .table-wrap thead th,
+html[data-theme="dark"] .table-wrap thead td,
+html[data-theme="dark"] tr.frozen-header-row td { background: #334155; }
+html[data-theme="dark"] .table-wrap tbody tr:nth-child(even) td,
+html[data-theme="dark"] .table-wrap tbody tr:nth-child(even) td.freeze-col { background: #273449; }
+html[data-theme="dark"] .table-wrap th.row-header { background: #1e3a5f; color: #93c5fd; }
+html[data-theme="dark"] .table-wrap th.row-header.corner { background: #1e293b; }
+html[data-theme="dark"] .table-wrap thead th.freeze-col { background: #334155; }
+html[data-theme="dark"] .import-detail-table th,
+html[data-theme="dark"] .import-detail-table td { background: #1e293b; color: var(--text); }
+html[data-theme="dark"] .import-detail-table thead th,
+html[data-theme="dark"] .import-detail-table thead th.freeze-1,
+html[data-theme="dark"] .import-detail-table thead th.freeze-2 { background: #334155; }
+html[data-theme="dark"] .import-detail-table tbody tr:nth-child(even) td,
+html[data-theme="dark"] .import-detail-table tbody tr:nth-child(even) td.freeze-1,
+html[data-theme="dark"] .import-detail-table tbody tr:nth-child(even) td.freeze-2 { background: #273449; }
+html[data-theme="dark"] .page-btn { background: #1e293b; border-color: var(--border); color: var(--text); }
+html[data-theme="dark"] .page-btn:disabled { background: #1e293b; }
+html[data-theme="dark"] .page-size-select select { background: #1e293b; color: var(--text); }
 html[data-theme="dark"] .suggestions-dropdown,
 html[data-theme="dark"] .theme-dropdown-menu,
 html[data-theme="dark"] .btn-dropdown .dropdown-menu,

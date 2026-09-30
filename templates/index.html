@@ -191,7 +191,10 @@
                                     <select id="email-col"></select>
                                 </div>
                             </div>
-                            <button id="email-preview-btn" class="btn secondary">解析并校验邮箱</button>
+                            <div class="action-row">
+                                <button id="email-preview-btn" class="btn secondary">解析并校验邮箱</button>
+                                <button id="email-full-preview-btn" class="btn toggle" type="button">全量</button>
+                            </div>
                         </div>
                         <div id="email-preview-area" class="preview-area hidden">
                             <h3>文件预览（表头 + 前 5 行/后 5 行数据，≤10 行全显）</h3>
@@ -219,6 +222,12 @@
                         </div>
                         <p id="date-warning" class="warning hidden">未从工资表中检测到明确日期，请手动确认年月。</p>
                         <div id="import-summary" class="summary-box"></div>
+                        <div class="action-row import-preview-actions">
+                            <button id="import-preview-full-btn" class="btn toggle" type="button">全量</button>
+                            <button id="import-preview-unmatched-btn" class="btn toggle" type="button">仅看未匹配</button>
+                            <span class="hint-text" id="import-preview-stats"></span>
+                        </div>
+                        <div class="table-wrap"><table id="import-preview-table"></table></div>
                         <div class="step-actions">
                             <button id="back-to-step2" class="btn text">上一步</button>
                             <button id="do-import" class="btn primary">执行导入</button>
