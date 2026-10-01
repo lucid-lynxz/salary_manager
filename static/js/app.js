@@ -2465,25 +2465,31 @@ async function showImportDetail(importId) {
             return;
         }
 
-        // 构建表头（固定）
+        // 列顺序完全跟工资表（detailCols）一致，最后加邮箱列
+        // 找出社区/姓名在 detailCols 中的索引用于冻结
+        const communityIdx = detailCols.indexOf('社区');
+        const nameIdx = detailCols.indexOf('姓名');
+        const freezeClass = (i) => {
+            if (i === communityIdx) return 'freeze-1';
+            if (i === nameIdx) return 'freeze-2';
+            return '';
+        };
+
+        // 构建表头：工资表原始列 + 邮箱列
         const theadHtml = `<thead><tr>
-            <th class="freeze-1">社区</th><th class="freeze-2">姓名</th>
-            <th>应发工资</th><th>代扣合计</th><th>实发工资</th><th>银行卡号</th>
-            ${detailCols.map(col => `<th>${escapeHtml(col)}</th>`).join('')}
+            ${detailCols.map((col, i) => {
+                const cls = freezeClass(i);
+                return `<th${cls ? ` class="${cls}"` : ''}>${escapeHtml(col)}</th>`;
+            }).join('')}
             <th>邮箱</th>
         </tr></thead>`;
 
         function rowHtml(rec) {
             return `<tr>
-                <td class="freeze-1">${escapeHtml(rec.community)}</td>
-                <td class="freeze-2">${escapeHtml(rec.name)}</td>
-                <td>${rec.gross_salary != null ? rec.gross_salary : ''}</td>
-                <td>${rec.total_deduction != null ? rec.total_deduction : ''}</td>
-                <td>${rec.net_salary != null ? rec.net_salary : ''}</td>
-                <td>${escapeHtml(rec.bank_account || '')}</td>
-                ${detailCols.map(col => {
+                ${detailCols.map((col, i) => {
+                    const cls = freezeClass(i);
                     const v = (rec.detail || {})[col];
-                    return `<td>${escapeHtml(v == null ? '' : String(v))}</td>`;
+                    return `<td${cls ? ` class="${cls}"` : ''}>${escapeHtml(v == null ? '' : String(v))}</td>`;
                 }).join('')}
                 <td>${escapeHtml(rec.email || '-')}</td>
             </tr>`;
