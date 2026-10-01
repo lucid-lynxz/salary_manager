@@ -361,7 +361,10 @@ def parse_records(df, header_rows, data_start_row, data_end_row, mapping, skip_r
             continue
         record = {"_row_index": excel_row, "_raw": {h: normalize_text(v) for h, v in zip(headers, row)}}
         for key, col_idx in mapping.items():
-            record[key] = normalize_text(row[col_idx]) if col_idx < len(row) else ""
+            if col_idx is None or not isinstance(col_idx, int) or col_idx < 0 or col_idx >= len(row):
+                record[key] = ""
+            else:
+                record[key] = normalize_text(row[col_idx])
         records.append(record)
     return records, headers
 
