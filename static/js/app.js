@@ -979,46 +979,12 @@ function renderSalaryValidation() {
     const pendingEmpty = vs.accountEmptyIssues.filter(r => !r.confirmed && !r.editing).length;
 
     let html = '';
-    // 社区+姓名重复（阻断性，需修改或删除）
+    // 社区+姓名重复：顶部仅保留简短警告，表格移至下方待处理异常区
     if (vs.duplicateNameGroups && vs.duplicateNameGroups.length > 0) {
         html += `<div class="duplicate-name-warning">
-            <strong>⚠ 检测到 ${vs.duplicateNameGroups.length} 组「社区+姓名」重复（必须修改或删除，使社区+姓名唯一）</strong>
-            <p>系统默认「社区+姓名」唯一，重复会导致数据合并错乱。请修改社区/姓名，或删除其中一条数据。</p>
+            <strong>⚠ 检测到 ${vs.duplicateNameGroups.length} 组「社区+姓名」重复</strong>
+            <p>系统默认「社区+姓名」唯一，重复会导致数据合并错乱。请在下方修改社区/姓名，或删除其中一条数据。</p>
         </div>`;
-        html += `<div class="duplicate-section"><h4>社区+姓名重复列表</h4>`;
-        vs.duplicateNameGroups.forEach((g, gi) => {
-            html += `<div class="duplicate-group">
-                <div class="group-header">
-                    <span class="group-email">${escapeHtml(g.community)} - ${escapeHtml(g.name)}</span>
-                    <span class="group-count">共 ${g.rows.length} 条</span>
-                </div>
-                <table class="salary-table"><thead><tr><th>行号</th><th>社区</th><th>姓名</th><th>操作</th></tr></thead><tbody>`;
-            g.rows.forEach((r, ri) => {
-                if (r.editing) {
-                    html += `<tr class="editing-row">
-                        <td>${escapeHtml(r.row)}</td>
-                        <td><input class="salary-edit-input" type="text" data-name-edit-input="community|${gi}|${ri}" value="${escapeHtml(r.editFields.community !== undefined ? r.editFields.community : r.community)}"></td>
-                        <td><input class="salary-edit-input" type="text" data-name-edit-input="name|${gi}|${ri}" value="${escapeHtml(r.editFields.name !== undefined ? r.editFields.name : r.name)}"></td>
-                        <td>
-                            <button class="btn small primary" data-name-save="${gi}|${ri}">保存</button>
-                            <button class="btn small" data-name-cancel="${gi}|${ri}">取消</button>
-                        </td>
-                    </tr>`;
-                } else {
-                    html += `<tr>
-                        <td>${escapeHtml(r.row)}</td>
-                        <td>${escapeHtml(r.community)}</td>
-                        <td>${escapeHtml(r.name)}</td>
-                        <td>
-                            <button class="btn small" data-name-edit="${gi}|${ri}">修改</button>
-                            <button class="btn small danger" data-name-delete="${gi}|${ri}">删除</button>
-                        </td>
-                    </tr>`;
-                }
-            });
-            html += `</tbody></table></div>`;
-        });
-        html += `</div>`;
     }
 
     html += `<div class="stats">
@@ -1177,7 +1143,45 @@ function renderSalaryValidation() {
         html += `</div>`;
     }
 
-    if (vs.duplicateAccountGroups.length === 0 && vs.accountChangedGroups.length === 0 && vs.mathMismatchIssues.length === 0 && vs.accountEmptyIssues.length === 0) {
+    // 社区+姓名重复（可修改/删除）
+    if (vs.duplicateNameGroups && vs.duplicateNameGroups.length > 0) {
+        html += `<div class="duplicate-section"><h4>社区+姓名重复</h4>`;
+        vs.duplicateNameGroups.forEach((g, gi) => {
+            html += `<div class="duplicate-group">
+                <div class="group-header">
+                    <span class="group-email">${escapeHtml(g.community)} - ${escapeHtml(g.name)}</span>
+                    <span class="group-count">共 ${g.rows.length} 条</span>
+                </div>
+                <table class="salary-table"><thead><tr><th>行号</th><th>社区</th><th>姓名</th><th>操作</th></tr></thead><tbody>`;
+            g.rows.forEach((r, ri) => {
+                if (r.editing) {
+                    html += `<tr class="editing-row">
+                        <td>${escapeHtml(r.row)}</td>
+                        <td><input class="salary-edit-input" type="text" data-name-edit-input="community|${gi}|${ri}" value="${escapeHtml(r.editFields.community !== undefined ? r.editFields.community : r.community)}"></td>
+                        <td><input class="salary-edit-input" type="text" data-name-edit-input="name|${gi}|${ri}" value="${escapeHtml(r.editFields.name !== undefined ? r.editFields.name : r.name)}"></td>
+                        <td>
+                            <button class="btn small primary" data-name-save="${gi}|${ri}">保存</button>
+                            <button class="btn small" data-name-cancel="${gi}|${ri}">取消</button>
+                        </td>
+                    </tr>`;
+                } else {
+                    html += `<tr>
+                        <td>${escapeHtml(r.row)}</td>
+                        <td>${escapeHtml(r.community)}</td>
+                        <td>${escapeHtml(r.name)}</td>
+                        <td>
+                            <button class="btn small" data-name-edit="${gi}|${ri}">修改</button>
+                            <button class="btn small danger" data-name-delete="${gi}|${ri}">删除</button>
+                        </td>
+                    </tr>`;
+                }
+            });
+            html += `</tbody></table></div>`;
+        });
+        html += `</div>`;
+    }
+
+    if (vs.duplicateAccountGroups.length === 0 && vs.accountChangedGroups.length === 0 && vs.mathMismatchIssues.length === 0 && vs.accountEmptyIssues.length === 0 && (vs.duplicateNameGroups || []).length === 0) {
         html += `<p>所有数据均校验通过 ✅</p>`;
     }
 
