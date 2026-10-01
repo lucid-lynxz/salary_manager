@@ -1387,7 +1387,7 @@ def api_import_records(import_id):
             FROM persons p
             JOIN salary_records sr ON sr.person_id = p.id AND sr.import_id = p.import_id
             WHERE p.import_id = ?
-            ORDER BY p.community, p.name
+            ORDER BY p.id
             """,
             (import_id,),
         ).fetchall()
