@@ -912,13 +912,25 @@ def api_import_preview():
             skip_rows=salary_cfg.get("skip_rows", []), is_email=False
         )
 
+        salary_overrides = salary_cfg.get("overrides") or {}
+        salary_deleted_rows = set(salary_cfg.get("deleted_rows") or [])
+
         headers = list(salary_headers) + ["邮箱"]
         rows = []
         matched = 0
         unmatched = 0
         for r in salary_records:
+            row_index = r.get("_row_index", "")
+            if row_index in salary_deleted_rows:
+                continue
             community = r.get("community", "").strip()
             name = r.get("name", "").strip()
+            # 应用社区/姓名覆盖
+            ov_identity = salary_overrides.get(str(row_index)) or {}
+            if ov_identity.get("community") is not None:
+                community = str(ov_identity["community"]).strip()
+            if ov_identity.get("name") is not None:
+                name = str(ov_identity["name"]).strip()
             if not community or not name:
                 continue
             raw = r.get("_raw", {})
@@ -1022,6 +1034,7 @@ def api_import():
             field_indexes = detect_salary_fields(salary_headers)
 
         salary_overrides = salary_cfg.get("overrides") or {}
+        salary_deleted_rows = set(salary_cfg.get("deleted_rows") or [])
 
         # 写入数据库
         with get_db() as conn:
@@ -1035,8 +1048,18 @@ def api_import():
             stats = {"total_salary": 0, "matched": 0, "unmatched": 0, "email_invalid": 0}
             unmatched = []
             for r in salary_records:
+                row_index = r.get("_row_index", "")
+                # 跳过用户删除的行
+                if row_index in salary_deleted_rows:
+                    continue
                 community = r.get("community", "").strip()
                 name = r.get("name", "").strip()
+                # 应用社区/姓名覆盖
+                ov_for_identity = salary_overrides.get(str(row_index)) or {}
+                if ov_for_identity.get("community") is not None:
+                    community = str(ov_for_identity["community"]).strip()
+                if ov_for_identity.get("name") is not None:
+                    name = str(ov_for_identity["name"]).strip()
                 if not community or not name:
                     continue
                 stats["total_salary"] += 1
@@ -1059,8 +1082,7 @@ def api_import():
                 person_id = cur.lastrowid
 
                 raw_row = r.get("_raw", {})
-                row_index = str(r.get("_row_index", ""))
-                ov = salary_overrides.get(row_index) or {}
+                ov = salary_overrides.get(str(row_index)) or {}
 
                 gross = ov.get("gross")
                 if gross is None and "gross_salary" in field_indexes:

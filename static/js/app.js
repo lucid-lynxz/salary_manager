@@ -1,6 +1,6 @@
 // State
 const state = {
-    salary: { fileId: null, filename: null, config: null, parsed: null, preview: null, previewRowIndices: [], mapping: null, validationState: null, overrides: {}, fullPreview: false, previewPage: 1, previewPageSize: 20 },
+    salary: { fileId: null, filename: null, config: null, parsed: null, preview: null, previewRowIndices: [], mapping: null, validationState: null, overrides: {}, deletedRows: [], fullPreview: false, previewPage: 1, previewPageSize: 20 },
     email: { fileId: null, filename: null, config: null, parsed: null, preview: null, previewRowIndices: [], mapping: null, overrides: {}, overrideLog: {}, validationState: null, fullPreview: false, previewPage: 1, previewPageSize: 20 },
     currentStep: 1,
     unlockedSteps: { 1: true },
@@ -713,38 +713,32 @@ async function parseSalary() {
 function initSalaryValidationState(validation) {
     if (!validation) { state.salary.validationState = null; return; }
     state.salary.overrides = {};
-    const dupGroups = (validation.duplicate_account_groups || []).map(g => ({
-        account: g.account,
-        rows: g.rows.map(r => ({ ...r, confirmed: false, editing: false, editFields: {} })),
-    }));
-    const changed = (validation.account_changed_groups || []).map(r => ({ ...r, confirmed: false, editing: false, editFields: {} }));
-    const mathIssues = (validation.math_mismatch_issues || []).map(r => ({ ...r, confirmed: false, editing: false, editFields: {} }));
-    const emptyIssues = (validation.account_empty_issues || []).map(r => ({ ...r, confirmed: false, editing: false, editFields: {} }));
-    state.salary.validationState = {
-        totalValid: validation.total_valid,
-        skippedEmpty: validation.skipped_empty,
-        hasAccountField: validation.has_account_field,
-        hasMathFields: validation.has_math_fields,
-        hasPreviousData: validation.has_previous_data,
-        duplicateAccountGroups: dupGroups,
-        duplicateNameGroups: validation.duplicate_name_groups || [],
-        accountChangedGroups: changed,
-        mathMismatchIssues: mathIssues,
-        accountEmptyIssues: emptyIssues,
-        allRows: (validation.all_rows || []).map(r => ({ ...r })),
-    };
+    state.salary.deletedRows = [];
+    rebuildSalaryValidationState(validation);
 }
 
-function rebuildSalaryValidationState() {
-    const vs = state.salary.validationState;
-    if (!vs) return;
+function rebuildSalaryValidationState(validation) {
+    const vs = state.salary.validationState || {};
+    if (validation) {
+        vs.totalValid = validation.total_valid;
+        vs.skippedEmpty = validation.skipped_empty;
+        vs.hasAccountField = validation.has_account_field;
+        vs.hasMathFields = validation.has_math_fields;
+        vs.hasPreviousData = validation.has_previous_data;
+        vs.allRows = (validation.all_rows || []).map(r => ({ ...r }));
+    }
+    state.salary.validationState = vs;
+
     const ov = state.salary.overrides;
+    const deleted = new Set(state.salary.deletedRows);
 
     const applyOverride = (r) => {
         const o = ov[r.row] || {};
         const next = {
             ...r,
-            account_clean: o.account_clean ?? r.account_clean,
+            community: o.community !== undefined ? o.community : r.community,
+            name: o.name !== undefined ? o.name : r.name,
+            account_clean: o.account_clean !== undefined ? o.account_clean : r.account_clean,
             gross: o.gross !== undefined ? o.gross : r.gross,
             deduction: o.deduction !== undefined ? o.deduction : r.deduction,
             net: o.net !== undefined ? o.net : r.net,
@@ -753,7 +747,9 @@ function rebuildSalaryValidationState() {
         return next;
     };
 
-    const allRows = vs.allRows.map(r => applyOverride(r));
+    const allRows = vs.allRows
+        .filter(r => !deleted.has(r.row))
+        .map(r => applyOverride(r));
 
     const accountCounts = {};
     allRows.forEach(r => {
@@ -798,10 +794,31 @@ function rebuildSalaryValidationState() {
         }
     });
 
+    // 重新计算社区+姓名重复（基于当前 overrides 和 deletedRows）
+    const nameCounts = {};
+    allRows.forEach(r => {
+        const key = `${r.community}|${r.name}`;
+        nameCounts[key] = (nameCounts[key] || 0) + 1;
+    });
+    const seenNameDup = new Set();
+    const nameDupGroups = [];
+    allRows.forEach(r => {
+        const key = `${r.community}|${r.name}`;
+        if (nameCounts[key] <= 1 || seenNameDup.has(key)) return;
+        const groupRows = allRows.filter(x => `${x.community}|${x.name}` === key);
+        nameDupGroups.push({
+            community: r.community,
+            name: r.name,
+            rows: groupRows.map(x => ({ ...x, editing: false, editFields: {} })),
+        });
+        seenNameDup.add(key);
+    });
+
     vs.duplicateAccountGroups = dupGroups;
     vs.mathMismatchIssues = mathIssues;
     vs.accountChangedGroups = accountChanged;
     vs.accountEmptyIssues = accountEmpty;
+    vs.duplicateNameGroups = nameDupGroups;
 }
 
 function updateSalaryNextButton() {
@@ -943,15 +960,46 @@ function renderSalaryValidation() {
     const pendingEmpty = vs.accountEmptyIssues.filter(r => !r.confirmed && !r.editing).length;
 
     let html = '';
-    // 社区+姓名重复警告（阻断性）
+    // 社区+姓名重复（阻断性，需修改或删除）
     if (vs.duplicateNameGroups && vs.duplicateNameGroups.length > 0) {
         html += `<div class="duplicate-name-warning">
-            <strong>⚠ 检测到 ${vs.duplicateNameGroups.length} 组「社区+姓名」重复</strong>
-            <p>系统默认「社区+姓名」唯一，重复会导致数据合并错乱。请修改工资表中的重复姓名后重新解析，修改后再进行下一步。</p>
-            <ul>${vs.duplicateNameGroups.map(g =>
-                `<li>${escapeHtml(g.community)} - ${escapeHtml(g.name)}（${g.count} 条，行号：${g.rows.map(r => r.row).join('、')}）</li>`
-            ).join('')}</ul>
+            <strong>⚠ 检测到 ${vs.duplicateNameGroups.length} 组「社区+姓名」重复（必须修改或删除，使社区+姓名唯一）</strong>
+            <p>系统默认「社区+姓名」唯一，重复会导致数据合并错乱。请修改社区/姓名，或删除其中一条数据。</p>
         </div>`;
+        html += `<div class="duplicate-section"><h4>社区+姓名重复列表</h4>`;
+        vs.duplicateNameGroups.forEach((g, gi) => {
+            html += `<div class="duplicate-group">
+                <div class="group-header">
+                    <span class="group-email">${escapeHtml(g.community)} - ${escapeHtml(g.name)}</span>
+                    <span class="group-count">共 ${g.rows.length} 条</span>
+                </div>
+                <table class="salary-table"><thead><tr><th>行号</th><th>社区</th><th>姓名</th><th>操作</th></tr></thead><tbody>`;
+            g.rows.forEach((r, ri) => {
+                if (r.editing) {
+                    html += `<tr class="editing-row">
+                        <td>${escapeHtml(r.row)}</td>
+                        <td><input class="salary-edit-input" type="text" data-name-edit-input="community|${gi}|${ri}" value="${escapeHtml(r.editFields.community !== undefined ? r.editFields.community : r.community)}"></td>
+                        <td><input class="salary-edit-input" type="text" data-name-edit-input="name|${gi}|${ri}" value="${escapeHtml(r.editFields.name !== undefined ? r.editFields.name : r.name)}"></td>
+                        <td>
+                            <button class="btn small primary" data-name-save="${gi}|${ri}">保存</button>
+                            <button class="btn small" data-name-cancel="${gi}|${ri}">取消</button>
+                        </td>
+                    </tr>`;
+                } else {
+                    html += `<tr>
+                        <td>${escapeHtml(r.row)}</td>
+                        <td>${escapeHtml(r.community)}</td>
+                        <td>${escapeHtml(r.name)}</td>
+                        <td>
+                            <button class="btn small" data-name-edit="${gi}|${ri}">修改</button>
+                            <button class="btn small danger" data-name-delete="${gi}|${ri}">删除</button>
+                        </td>
+                    </tr>`;
+                }
+            });
+            html += `</tbody></table></div>`;
+        });
+        html += `</div>`;
     }
 
     html += `<div class="stats">
@@ -1174,6 +1222,55 @@ function renderSalaryValidation() {
                 const groupType = parts[0], groupIdx = parseInt(parts[1]), rowIdx = parts[2] === '-' ? -1 : parseInt(parts[2]);
                 cancelSalaryEdit(groupType, groupIdx, rowIdx);
             }
+        });
+    });
+
+    // 社区+姓名重复：修改/删除
+    el.querySelectorAll('[data-name-edit]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const [gi, ri] = btn.dataset.nameEdit.split('|').map(Number);
+            const row = state.salary.validationState.duplicateNameGroups[gi].rows[ri];
+            row.editing = true;
+            row.editFields = { community: row.community, name: row.name };
+            renderSalaryValidation();
+        });
+    });
+    el.querySelectorAll('[data-name-save]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const [gi, ri] = btn.dataset.nameSave.split('|').map(Number);
+            const row = state.salary.validationState.duplicateNameGroups[gi].rows[ri];
+            const excelRow = row.row;
+            state.salary.overrides[excelRow] = state.salary.overrides[excelRow] || {};
+            if (row.editFields.community !== undefined) state.salary.overrides[excelRow].community = row.editFields.community;
+            if (row.editFields.name !== undefined) state.salary.overrides[excelRow].name = row.editFields.name;
+            rebuildSalaryValidationState();
+            renderSalaryValidation();
+            updateSalaryNextButton();
+        });
+    });
+    el.querySelectorAll('[data-name-cancel]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const [gi, ri] = btn.dataset.nameCancel.split('|').map(Number);
+            state.salary.validationState.duplicateNameGroups[gi].rows[ri].editing = false;
+            renderSalaryValidation();
+        });
+    });
+    el.querySelectorAll('[data-name-delete]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const [gi, ri] = btn.dataset.nameDelete.split('|').map(Number);
+            const row = state.salary.validationState.duplicateNameGroups[gi].rows[ri];
+            if (!confirm(`确定删除第 ${row.row} 行（${row.community} - ${row.name}）的数据吗？删除后该条工资记录不会导入。`)) return;
+            state.salary.deletedRows.push(row.row);
+            rebuildSalaryValidationState();
+            renderSalaryValidation();
+            updateSalaryNextButton();
+        });
+    });
+    el.querySelectorAll('[data-name-edit-input]').forEach(input => {
+        input.addEventListener('input', () => {
+            const [field, gi, ri] = input.dataset.nameEditInput.split('|');
+            const row = state.salary.validationState.duplicateNameGroups[parseInt(gi)].rows[parseInt(ri)];
+            row.editFields[field] = input.value;
         });
     });
 }
@@ -1679,6 +1776,7 @@ function buildImportConfig() {
             mapping: salaryMapping,
             salary_field_mapping: salaryFieldMapping,
             overrides: state.salary.overrides,
+            deleted_rows: state.salary.deletedRows,
         },
         email: {
             file_id: state.email.fileId,
