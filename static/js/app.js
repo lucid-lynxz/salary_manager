@@ -1777,6 +1777,13 @@ $('#do-import').addEventListener('click', async () => {
     }
     box.innerHTML = html;
     loadMonths();
+    // 导入成功后跳转到「导入历史」标签页并刷新列表
+    $$('.tab-btn').forEach(b => b.classList.remove('active'));
+    $$('.tab-panel').forEach(p => p.classList.remove('active'));
+    const historyBtn = document.querySelector('.tab-btn[data-tab="history"]');
+    if (historyBtn) historyBtn.classList.add('active');
+    $('#tab-history').classList.add('active');
+    loadHistory();
 });
 
 // Search
