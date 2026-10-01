@@ -489,7 +489,11 @@ function unlockStep(n) {
 function updateStepClickable() {
     $$('.step').forEach(s => {
         const step = parseInt(s.dataset.step);
-        s.classList.toggle('clickable', state.unlockedSteps[step]);
+        let clickable = state.unlockedSteps[step];
+        // 步骤2需工资表校验通过，步骤3需邮箱表校验通过
+        if (step === 2 && $('#to-step2').disabled) clickable = false;
+        if (step === 3 && $('#to-step3').disabled) clickable = false;
+        s.classList.toggle('clickable', clickable);
     });
 }
 
@@ -498,6 +502,15 @@ $('#wizard-steps').addEventListener('click', (e) => {
     if (!stepEl) return;
     const n = parseInt(stepEl.dataset.step);
     if (!state.unlockedSteps[n]) return;
+    // 顶部步骤按钮也需遵守校验：步骤2需工资表校验通过，步骤3需邮箱表校验通过
+    if (n === 2 && $('#to-step2').disabled) {
+        alert('请先处理工资表中的异常项后再进入下一步');
+        return;
+    }
+    if (n === 3 && $('#to-step3').disabled) {
+        alert('请先处理邮箱表中的异常项后再进入下一步');
+        return;
+    }
     goStep(n);
     if (n === 3) {
         buildSummary();
@@ -835,6 +848,7 @@ function updateSalaryNextButton() {
     const emptyPending = vs.accountEmptyIssues.some(r => !r.confirmed && !r.editing);
     const nameDup = (vs.duplicateNameGroups || []).length > 0;
     $('#to-step2').disabled = dupPending || changedPending || mathPending || emptyPending || nameDup;
+    updateStepClickable();
 }
 
 function startSalaryEdit(groupType, groupIdx, rowIdx) {
@@ -1568,12 +1582,14 @@ function updateStep3Button() {
     const vs = state.email.validationState;
     if (!vs) {
         $('#to-step3').disabled = true;
+        updateStepClickable();
         return;
     }
     const hasPendingDuplicates = vs.duplicateGroups.some(g => g.rows.some(r => !r.confirmed && !r.editing));
     const hasIssues = vs.issues.length > 0;
     const nameDup = (vs.duplicateNameGroups || []).length > 0;
     $('#to-step3').disabled = hasPendingDuplicates || hasIssues || nameDup;
+    updateStepClickable();
 }
 
 function updateEmailPreviewForOverride(excelRow, newEmail) {
