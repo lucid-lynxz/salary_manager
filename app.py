@@ -52,8 +52,7 @@ def init_db():
         name TEXT NOT NULL,
         email TEXT,
         email_status TEXT NOT NULL DEFAULT 'unknown',
-        email_issues TEXT,
-        UNIQUE(import_id, community, name)
+        email_issues TEXT
     );
 
     CREATE TABLE IF NOT EXISTS salary_records (
@@ -74,6 +73,28 @@ def init_db():
     """
     with get_db() as conn:
         conn.executescript(schema)
+        # 迁移：旧版 persons 表有 UNIQUE(import_id, community, name) 约束，
+        # 会导致同社区同名的工资记录被覆盖。检测并移除该约束。
+        cur = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='persons'")
+        row = cur.fetchone()
+        if row and "UNIQUE(import_id, community, name)" in (row["sql"] or ""):
+            conn.executescript("""
+                CREATE TABLE persons_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    import_id INTEGER NOT NULL REFERENCES salary_imports(id) ON DELETE CASCADE,
+                    community TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    email TEXT,
+                    email_status TEXT NOT NULL DEFAULT 'unknown',
+                    email_issues TEXT
+                );
+                INSERT INTO persons_new SELECT * FROM persons;
+                DROP TABLE persons;
+                ALTER TABLE persons_new RENAME TO persons;
+                CREATE INDEX IF NOT EXISTS idx_persons_name ON persons(name);
+                CREATE INDEX IF NOT EXISTS idx_persons_community ON persons(community);
+                CREATE INDEX IF NOT EXISTS idx_persons_import ON persons(import_id);
+            """)
 
 
 init_db()
@@ -989,7 +1010,7 @@ def api_import():
 
                 # 无论是否匹配到邮箱，都写入人员和工资记录；未匹配的邮箱留空
                 cur = conn.execute(
-                    "INSERT OR REPLACE INTO persons (import_id, community, name, email, email_status, email_issues) "
+                    "INSERT INTO persons (import_id, community, name, email, email_status, email_issues) "
                     "VALUES (?, ?, ?, ?, ?, ?)",
                     (import_id, community, name, email_info["email"], email_info["status"], email_info["issues"])
                 )
