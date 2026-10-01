@@ -1843,6 +1843,7 @@ function buildImportConfig() {
             salary_field_mapping: salaryFieldMapping,
             overrides: state.salary.overrides,
             deleted_rows: state.salary.deletedRows,
+            email_overrides: state.importPreview.emailOverrides || {},
         },
         email: {
             file_id: state.email.fileId,
@@ -1870,6 +1871,8 @@ async function loadImportPreview() {
         if (res.error) { table.innerHTML = `<tr><td>加载失败：${escapeHtml(res.error)}</td></tr>`; return; }
         state.importPreview.headers = res.headers;
         state.importPreview.rows = res.rows;
+        state.importPreview.rowIndices = res.row_indices || res.rows.map((_, i) => i + 2);
+        state.importPreview.emailOverrides = {};
         state.importPreview.total = res.total;
         state.importPreview.matched = res.matched;
         state.importPreview.unmatched = res.unmatched;
@@ -1894,32 +1897,81 @@ async function loadImportPreview() {
 }
 
 function renderImportPreview() {
-    const { headers, rows, fullPreview, page, pageSize, onlyUnmatched } = state.importPreview;
+    const { headers, rows, rowIndices, fullPreview, page, pageSize, onlyUnmatched, emailOverrides } = state.importPreview;
     if (!headers || !rows) return;
-    // 未匹配筛选：邮箱列（最后一列）为空
+    const emailIdx = headers.length - 1;
+    // 未匹配筛选：邮箱列（最后一列）为空（考虑已编辑的邮箱）
     let sourceRows = rows;
+    let sourceIndices = rowIndices;
     if (onlyUnmatched) {
-        const emailIdx = headers.length - 1;
-        sourceRows = rows.filter(r => !r[emailIdx]);
+        const filtered = [];
+        const filteredIdx = [];
+        rows.forEach((r, i) => {
+            const curEmail = emailOverrides[rowIndices[i]] !== undefined ? emailOverrides[rowIndices[i]] : r[emailIdx];
+            if (!curEmail) { filtered.push(r); filteredIdx.push(rowIndices[i]); }
+        });
+        sourceRows = filtered;
+        sourceIndices = filteredIdx;
     }
     let displayRows = sourceRows;
-    let rowIndices = sourceRows.map((_, i) => i + 2);
+    let displayIndices = sourceIndices;
     if (!fullPreview && sourceRows.length > 10) {
         const head = sourceRows.slice(0, 5);
         const tail = sourceRows.slice(-5);
+        const headIdx = sourceIndices.slice(0, 5);
+        const tailIdx = sourceIndices.slice(-5);
         displayRows = [...head, ['...'], ...tail];
-        const headIdx = head.map((_, i) => i + 2);
-        const tailIdx = tail.map((_, i) => sourceRows.length - 5 + i + 2);
-        rowIndices = [...headIdx, 0, ...tailIdx];
+        displayIndices = [...headIdx, 0, ...tailIdx];
     }
     const allRows = [headers, ...displayRows];
-    const allIndices = [1, ...rowIndices];
+    const allIndices = [1, ...displayIndices];
     const pagination = fullPreview ? { page, pageSize } : null;
     const communityIdx = headers.indexOf('社区');
     const nameIdx = headers.indexOf('姓名');
     const freezeCols = [communityIdx, nameIdx].filter(i => i >= 0).sort((a, b) => a - b);
     const pageInfo = renderTable($('#import-preview-table'), allRows, 1, [1], allIndices, pagination, freezeCols);
     renderPreviewPagination('import', pageInfo);
+
+    // 邮箱列编辑：仅对空邮箱行可编辑
+    const table = $('#import-preview-table');
+    table.querySelectorAll('tbody tr').forEach(tr => {
+        const cells = tr.querySelectorAll('td');
+        if (cells.length <= emailIdx) return;
+        const excelRow = parseInt(tr.querySelector('.row-header')?.textContent);
+        if (isNaN(excelRow)) return;
+        const emailCell = cells[emailIdx];
+        const originalEmail = state.importPreview.rows[state.importPreview.rowIndices.indexOf(excelRow)]?.[emailIdx] ?? '';
+        const curEmail = emailOverrides[excelRow] !== undefined ? emailOverrides[excelRow] : originalEmail;
+        if (!originalEmail) {
+            emailCell.innerHTML = `<input class="email-edit-input" type="email" data-email-edit="${excelRow}" value="${escapeHtml(curEmail)}" placeholder="输入邮箱..." style="width:200px">`;
+        }
+    });
+    table.querySelectorAll('[data-email-edit]').forEach(input => {
+        input.addEventListener('input', () => {
+            const excelRow = parseInt(input.dataset.emailEdit);
+            state.importPreview.emailOverrides[excelRow] = input.value.trim();
+            // 更新统计
+            updateImportPreviewStats();
+        });
+    });
+}
+
+function updateImportPreviewStats() {
+    const { rows, rowIndices, emailOverrides } = state.importPreview;
+    if (!rows || !rowIndices) return;
+    const emailIdx = state.importPreview.headers.length - 1;
+    let matched = 0, unmatched = 0;
+    rows.forEach((r, i) => {
+        const curEmail = emailOverrides[rowIndices[i]] !== undefined ? emailOverrides[rowIndices[i]] : r[emailIdx];
+        if (curEmail) matched++; else unmatched++;
+    });
+    state.importPreview.matched = matched;
+    state.importPreview.unmatched = unmatched;
+    $('#import-preview-stats').textContent = `共 ${rows.length} 条，已匹配邮箱 ${matched} 条，未匹配 ${unmatched} 条`;
+    const emptyEmailEl = $('#summary-empty-email');
+    if (emptyEmailEl) {
+        emptyEmailEl.innerHTML = unmatched > 0 ? `<p>邮箱空白：<strong class="text-danger">${unmatched}</strong> 条</p>` : '';
+    }
 }
 
 // 导入预览全量按钮

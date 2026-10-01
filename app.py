@@ -917,6 +917,7 @@ def api_import_preview():
 
         headers = list(salary_headers) + ["邮箱"]
         rows = []
+        row_indices = []
         matched = 0
         unmatched = 0
         for r in salary_records:
@@ -935,6 +936,15 @@ def api_import_preview():
                 continue
             raw = r.get("_raw", {})
             row_values = [raw.get(h, "") for h in salary_headers]
+            # 将社区/姓名覆盖应用到返回的行数据中
+            if ov_identity.get("community") is not None:
+                ci = s_mapping.get("community")
+                if ci is not None and ci < len(row_values):
+                    row_values[ci] = ov_identity["community"]
+            if ov_identity.get("name") is not None:
+                ni = s_mapping.get("name")
+                if ni is not None and ni < len(row_values):
+                    row_values[ni] = ov_identity["name"]
             email = email_map.get((community, name), "")
             if email:
                 matched += 1
@@ -942,10 +952,12 @@ def api_import_preview():
                 unmatched += 1
             row_values.append(email)
             rows.append(row_values)
+            row_indices.append(row_index)
 
         return jsonify({
             "headers": headers,
             "rows": rows,
+            "row_indices": row_indices,
             "total": len(rows),
             "matched": matched,
             "unmatched": unmatched,
@@ -1035,6 +1047,7 @@ def api_import():
 
         salary_overrides = salary_cfg.get("overrides") or {}
         salary_deleted_rows = set(salary_cfg.get("deleted_rows") or [])
+        email_overrides = salary_cfg.get("email_overrides") or {}
 
         # 写入数据库
         with get_db() as conn:
@@ -1064,7 +1077,12 @@ def api_import():
                     continue
                 stats["total_salary"] += 1
                 key = (community, name)
-                email_info = email_map.get(key, {"email": "", "status": "missing", "issues": "未找到对应邮箱"})
+                # 优先使用用户在确认导入页手动填写的邮箱
+                manual_email = email_overrides.get(str(row_index))
+                if manual_email is not None and manual_email.strip():
+                    email_info = {"email": manual_email.strip(), "status": "valid", "issues": ""}
+                else:
+                    email_info = email_map.get(key, {"email": "", "status": "missing", "issues": "未找到对应邮箱"})
                 if email_info["status"] != "valid":
                     stats["email_invalid"] += 1
                 if email_info["status"] == "missing":
