@@ -1771,10 +1771,13 @@ function renderValidation() {
             ).join('')}</ul>
         </div>`;
     }
+    const invalidStat = vs.invalid > 0
+        ? `<div class="stat invalid">无效：${vs.invalid} / ${vs.total}</div>`
+        : '';
     html += `
         <div class="stats">
             <div class="stat valid">有效：${vs.valid} / ${vs.total}</div>
-            <div class="stat invalid">无效：${vs.invalid} / ${vs.total}</div>
+            ${invalidStat}
             <button type="button" class="help-icon-btn" id="email-validation-help" title="查看校验说明">?</button>
         </div>
     `;
