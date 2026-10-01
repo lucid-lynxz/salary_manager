@@ -1342,10 +1342,10 @@ function renderSalaryValidation() {
         });
     });
     el.querySelectorAll('[data-name-delete]').forEach(btn => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', async () => {
             const [gi, ri] = btn.dataset.nameDelete.split('|').map(Number);
             const row = state.salary.validationState.duplicateNameGroups[gi].rows[ri];
-            if (!confirm(`确定删除第 ${row.row} 行（${row.community} - ${row.name}）的数据吗？删除后该条工资记录不会导入。`)) return;
+            if (!await confirmModal(`确定删除第 ${row.row} 行（${row.community} - ${row.name}）的数据吗？删除后该条工资记录不会导入。`)) return;
             state.salary.deletedRows.push(row.row);
             rebuildSalaryValidationState();
             renderSalaryValidation();
@@ -2402,7 +2402,7 @@ async function loadHistory() {
         `;
         div.querySelector('button').addEventListener('click', async (e) => {
             e.stopPropagation();
-            if (!confirm('确定删除这条导入记录及其所有人员工资数据吗？')) return;
+            if (!await confirmModal('确定删除这条导入记录及其所有人员工资数据吗？')) return;
             await fetch(`/api/import/${item.id}`, { method: 'DELETE' });
             loadHistory();
         });
@@ -2637,5 +2637,27 @@ document.addEventListener('click', (e) => {
         hidePackageDropdown();
     }
 });
+
+// 自定义确认弹框（居中显示，替代原生 confirm）
+function confirmModal(message) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'confirm-modal-overlay';
+        overlay.innerHTML = `<div class="confirm-modal-box">
+            <p class="confirm-modal-message">${escapeHtml(message)}</p>
+            <div class="confirm-modal-actions">
+                <button class="btn" data-confirm="cancel">取消</button>
+                <button class="btn danger" data-confirm="ok">确定</button>
+            </div>
+        </div>`;
+        document.body.appendChild(overlay);
+        overlay.querySelector('[data-confirm="ok"]').addEventListener('click', () => { overlay.remove(); resolve(true); });
+        overlay.querySelector('[data-confirm="cancel"]').addEventListener('click', () => { overlay.remove(); resolve(false); });
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) { overlay.remove(); resolve(false); } });
+        // 按 ESC 取消
+        const escHandler = (e) => { if (e.key === 'Escape') { overlay.remove(); resolve(false); document.removeEventListener('keydown', escHandler); } };
+        document.addEventListener('keydown', escHandler);
+    });
+}
 
 applySavedTheme();
