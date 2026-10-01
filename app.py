@@ -662,10 +662,9 @@ def api_history_emails():
         return jsonify({"emails": []})
     with get_db() as conn:
         rows = conn.execute(
-            "SELECT DISTINCT e.email FROM emails e "
-            "JOIN persons p ON e.person_id = p.id "
-            "WHERE p.community = ? AND p.name = ? AND e.email != '' "
-            "ORDER BY e.id DESC",
+            "SELECT DISTINCT email FROM persons "
+            "WHERE community = ? AND name = ? AND email != '' AND email IS NOT NULL "
+            "ORDER BY id DESC",
             (community, name)
         ).fetchall()
     emails = [r[0] for r in rows]
