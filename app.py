@@ -562,6 +562,26 @@ def validate_salary_records(records, headers, field_indexes_override=None):
                 "account_raw": c["account_raw"],
             })
 
+    # 检测社区+姓名重复
+    name_counts = {}
+    for c in cleaned_list:
+        key = (c["community"], c["name"])
+        name_counts[key] = name_counts.get(key, 0) + 1
+    duplicate_name_groups = []
+    seen_names = set()
+    for c in cleaned_list:
+        key = (c["community"], c["name"])
+        if name_counts.get(key, 0) <= 1 or key in seen_names:
+            continue
+        group_rows = [x for x in cleaned_list if (x["community"], x["name"]) == key]
+        duplicate_name_groups.append({
+            "community": key[0],
+            "name": key[1],
+            "count": len(group_rows),
+            "rows": [{"row": x["row"], "community": x["community"], "name": x["name"]} for x in group_rows],
+        })
+        seen_names.add(key)
+
     return {
         "total_parsed": len(records),
         "skipped_empty": skipped_empty,
@@ -569,6 +589,7 @@ def validate_salary_records(records, headers, field_indexes_override=None):
         "has_account_field": has_account,
         "has_math_fields": has_gross and has_deduction and has_net,
         "duplicate_account_groups": duplicate_groups,
+        "duplicate_name_groups": duplicate_name_groups,
         "math_mismatch_issues": math_mismatch,
         "account_changed_groups": account_changed,
         "account_empty_issues": account_empty,
@@ -793,6 +814,26 @@ def api_parse_config():
                 })
                 seen_emails.add(email)
 
+            # 检测邮箱表中社区+姓名重复
+            email_name_counts = {}
+            for cr in cleaned_records:
+                key = (cr["community"], cr["name"])
+                email_name_counts[key] = email_name_counts.get(key, 0) + 1
+            duplicate_name_groups = []
+            seen_email_names = set()
+            for cr in cleaned_records:
+                key = (cr["community"], cr["name"])
+                if email_name_counts.get(key, 0) <= 1 or key in seen_email_names:
+                    continue
+                group_rows = [x for x in cleaned_records if (x["community"], x["name"]) == key]
+                duplicate_name_groups.append({
+                    "community": key[0],
+                    "name": key[1],
+                    "count": len(group_rows),
+                    "rows": [{"row": x["row"], "community": x["community"], "name": x["name"], "email": x.get("cleaned", "")} for x in group_rows],
+                })
+                seen_email_names.add(key)
+
             validation = {
                 "total": len(records),
                 "valid": valid_count,
@@ -801,6 +842,7 @@ def api_parse_config():
                 "other_issue_count": len(issues),
                 "issues": issues[:50],
                 "duplicate_groups": duplicate_groups,
+                "duplicate_name_groups": duplicate_name_groups,
             }
 
         if file_type == "salary":

@@ -727,6 +727,7 @@ function initSalaryValidationState(validation) {
         hasMathFields: validation.has_math_fields,
         hasPreviousData: validation.has_previous_data,
         duplicateAccountGroups: dupGroups,
+        duplicateNameGroups: validation.duplicate_name_groups || [],
         accountChangedGroups: changed,
         mathMismatchIssues: mathIssues,
         accountEmptyIssues: emptyIssues,
@@ -810,7 +811,8 @@ function updateSalaryNextButton() {
     const changedPending = vs.accountChangedGroups.some(r => !r.confirmed && !r.editing);
     const mathPending = vs.mathMismatchIssues.some(r => !r.confirmed && !r.editing);
     const emptyPending = vs.accountEmptyIssues.some(r => !r.confirmed && !r.editing);
-    $('#to-step2').disabled = dupPending || changedPending || mathPending || emptyPending;
+    const nameDup = (vs.duplicateNameGroups || []).length > 0;
+    $('#to-step2').disabled = dupPending || changedPending || mathPending || emptyPending || nameDup;
 }
 
 function startSalaryEdit(groupType, groupIdx, rowIdx) {
@@ -941,6 +943,17 @@ function renderSalaryValidation() {
     const pendingEmpty = vs.accountEmptyIssues.filter(r => !r.confirmed && !r.editing).length;
 
     let html = '';
+    // 社区+姓名重复警告（阻断性）
+    if (vs.duplicateNameGroups && vs.duplicateNameGroups.length > 0) {
+        html += `<div class="duplicate-name-warning">
+            <strong>⚠ 检测到 ${vs.duplicateNameGroups.length} 组「社区+姓名」重复</strong>
+            <p>系统默认「社区+姓名」唯一，重复会导致数据合并错乱。请修改工资表中的重复姓名后重新解析，修改后再进行下一步。</p>
+            <ul>${vs.duplicateNameGroups.map(g =>
+                `<li>${escapeHtml(g.community)} - ${escapeHtml(g.name)}（${g.count} 条，行号：${g.rows.map(r => r.row).join('、')}）</li>`
+            ).join('')}</ul>
+        </div>`;
+    }
+
     html += `<div class="stats">
         <div class="stat valid">有效：${vs.totalValid}</div>
         ${vs.skippedEmpty > 0 ? `<div class="stat">跳过空行：${vs.skippedEmpty}</div>` : ''}
@@ -1328,6 +1341,7 @@ function initValidationState(validation) {
         invalid: validation.invalid,
         issues: validation.issues || [],
         duplicateGroups: groups,
+        duplicateNameGroups: validation.duplicate_name_groups || [],
     };
 }
 
@@ -1454,7 +1468,8 @@ function updateStep3Button() {
     }
     const hasPendingDuplicates = vs.duplicateGroups.some(g => g.rows.some(r => !r.confirmed && !r.editing));
     const hasIssues = vs.issues.length > 0;
-    $('#to-step3').disabled = hasPendingDuplicates || hasIssues;
+    const nameDup = (vs.duplicateNameGroups || []).length > 0;
+    $('#to-step3').disabled = hasPendingDuplicates || hasIssues || nameDup;
 }
 
 function updateEmailPreviewForOverride(excelRow, newEmail) {
@@ -1491,7 +1506,18 @@ function renderValidation() {
     const vs = state.email.validationState;
     if (!vs) { hide(el); return; }
     show(el);
-    let html = `
+    let html = '';
+    // 社区+姓名重复警告（阻断性）
+    if (vs.duplicateNameGroups && vs.duplicateNameGroups.length > 0) {
+        html += `<div class="duplicate-name-warning">
+            <strong>⚠ 检测到 ${vs.duplicateNameGroups.length} 组「社区+姓名」重复</strong>
+            <p>系统默认「社区+姓名」唯一，重复会导致数据合并错乱。请修改邮箱表中的重复姓名后重新解析，修改后再进行下一步。</p>
+            <ul>${vs.duplicateNameGroups.map(g =>
+                `<li>${escapeHtml(g.community)} - ${escapeHtml(g.name)}（${g.count} 条，行号：${g.rows.map(r => r.row).join('、')}）</li>`
+            ).join('')}</ul>
+        </div>`;
+    }
+    html += `
         <div class="stats">
             <div class="stat valid">有效：${vs.valid} / ${vs.total}</div>
             <div class="stat invalid">无效：${vs.invalid} / ${vs.total}</div>

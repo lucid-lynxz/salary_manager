@@ -151,11 +151,21 @@ def main():
 
     random.seed(42)
 
-    # 先生成人员清单（保证工资表与邮箱表的人员一一对应）
+    # 先生成人员清单（保证工资表与邮箱表的人员一一对应，且社区+姓名唯一）
     people = []
+    used_keys = set()
     for i in range(1, count + 1):
         community = random.choice(COMMUNITIES)
         name = random_name()
+        key = (community, name)
+        # 若社区+姓名重复，重新生成直到唯一
+        attempts = 0
+        while key in used_keys and attempts < 100:
+            community = random.choice(COMMUNITIES)
+            name = random_name()
+            key = (community, name)
+            attempts += 1
+        used_keys.add(key)
         email = random_email(name, i)
         people.append((i, community, name, email))
 
