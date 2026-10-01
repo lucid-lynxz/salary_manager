@@ -1843,6 +1843,10 @@ function buildSummary() {
         $('#salary-month').value = month;
         hide($('#date-warning'));
     } else {
+        // 未解析到年月，默认填充今年/本月
+        const now = new Date();
+        $('#salary-year').value = now.getFullYear();
+        $('#salary-month').value = now.getMonth() + 1;
         show($('#date-warning'));
     }
     const salaryFileLink = state.salary.fileId
@@ -2093,6 +2097,19 @@ $('#import-preview-unmatched-btn').addEventListener('click', () => {
 });
 
 $('#do-import').addEventListener('click', async () => {
+    // 校验年份月份
+    const yearVal = $('#salary-year').value;
+    const monthVal = $('#salary-month').value;
+    const year = parseInt(yearVal);
+    const month = parseInt(monthVal);
+    if (!/^[12]\d{3}$/.test(yearVal) || isNaN(year)) {
+        alert('年份请输入4位数字，且首位为1或2');
+        return;
+    }
+    if (isNaN(month) || month < 1 || month > 12) {
+        alert('月份只能是 1-12');
+        return;
+    }
     // 存在未匹配记录时，二次确认
     if (state.importPreview.unmatched && state.importPreview.unmatched > 0) {
         const msg = `检测到 ${state.importPreview.unmatched} 条工资记录未匹配到邮箱。\n\n点击「确定」将导入全部工资数据，未匹配人员的邮箱留空；点击「取消」放弃导入。`;
@@ -2100,8 +2117,8 @@ $('#do-import').addEventListener('click', async () => {
     }
     const cfg = buildImportConfig();
     const body = {
-        year: parseInt($('#salary-year').value),
-        month: parseInt($('#salary-month').value),
+        year,
+        month,
         ...cfg,
     };
     const box = $('#import-result');
@@ -2684,5 +2701,34 @@ function confirmModal(message) {
         okBtn.focus();
     });
 }
+
+// 年份/月份输入限制：年份4位且首位1或2，月份1-12
+(function() {
+    const yearInput = $('#salary-year');
+    const monthInput = $('#salary-month');
+    if (yearInput) {
+        yearInput.addEventListener('input', () => {
+            // 只保留数字，首位必须是1或2，最多4位
+            let v = yearInput.value.replace(/[^\d]/g, '');
+            if (v && !/[12]/.test(v[0])) v = '';
+            if (v.length > 4) v = v.slice(0, 4);
+            if (yearInput.value !== v) yearInput.value = v;
+        });
+    }
+    if (monthInput) {
+        monthInput.addEventListener('input', () => {
+            // 只保留数字，最多2位，且值在1-12
+            let v = monthInput.value.replace(/[^\d]/g, '');
+            if (v.length > 2) v = v.slice(0, 2);
+            if (v && parseInt(v) > 12) v = '12';
+            if (monthInput.value !== v) monthInput.value = v;
+        });
+        // 失焦时若是0或空，回退到1
+        monthInput.addEventListener('blur', () => {
+            const v = parseInt(monthInput.value);
+            if (!v || v < 1) monthInput.value = '1';
+        });
+    }
+})();
 
 applySavedTheme();
