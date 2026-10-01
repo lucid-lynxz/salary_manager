@@ -201,6 +201,28 @@ function saveCurrentConfig() {
     }, 800);
 }
 
+// ---------------------------------------------------------------------------
+// 列配置变更后自动重新触发解析与有效性校验（防抖）
+// ---------------------------------------------------------------------------
+let parseSalaryTimer = null;
+let parseEmailTimer = null;
+
+function triggerParseSalary() {
+    if (!state.salary.fileId) return;
+    clearTimeout(parseSalaryTimer);
+    parseSalaryTimer = setTimeout(() => {
+        parseSalary().catch(err => console.error('自动解析工资表失败:', err));
+    }, 300);
+}
+
+function triggerParseEmail() {
+    if (!state.email.fileId) return;
+    clearTimeout(parseEmailTimer);
+    parseEmailTimer = setTimeout(() => {
+        parseEmail().catch(err => console.error('自动解析邮箱表失败:', err));
+    }, 300);
+}
+
 function renderTable(tableEl, rows, startRow, headerRows, rowIndices, pagination, freezeCols) {
     tableEl.innerHTML = '';
     if (!rows || !rows.length) return;
@@ -622,6 +644,7 @@ $('#salary-sheet').addEventListener('change', async () => {
         renderSalaryPreview();
         applySectionDefaults('salary', data.detected_header_row);
         $('#to-step2').disabled = true;
+        triggerParseSalary();
     } catch (err) {
         console.error(err);
         alert('切换 Sheet 失败：' + err.message);
@@ -671,14 +694,30 @@ function updateDataStartFromHeaders(headerInputId, dataStartId) {
 $('#salary-header-rows').addEventListener('input', () => {
     updateDataStartFromHeaders('#salary-header-rows', '#salary-data-start');
     if (state.salary.preview) renderSalaryPreview();
+    triggerParseSalary();
 });
 
 $('#salary-skip-rows').addEventListener('input', () => {
     if (state.salary.preview) renderSalaryPreview();
+    triggerParseSalary();
 });
 
 $('#salary-data-end-col').addEventListener('input', () => {
     if (state.salary.preview) renderSalaryPreview();
+    triggerParseSalary();
+});
+
+// 数据起始行 / 结束行 修改后重新触发解析校验
+['salary-data-start', 'salary-data-end'].forEach(id => {
+    const el = $(`#${id}`);
+    if (el) el.addEventListener('input', triggerParseSalary);
+});
+
+// 工资字段列（银行账号 / 应发 / 代扣 / 实发）下拉框变更后重新触发解析校验
+// 注意：姓名列 / 社区列 不在此列 —— 它们未发送到后端，触发会被 suggested_mapping 覆盖
+['salary-bank-account-col', 'salary-gross-col', 'salary-deduction-col', 'salary-net-col'].forEach(id => {
+    const el = $(`#${id}`);
+    if (el) el.addEventListener('change', triggerParseSalary);
 });
 
 async function parseSalary() {
@@ -1420,6 +1459,7 @@ $('#email-sheet').addEventListener('change', async () => {
         renderEmailPreview();
         applySectionDefaults('email', data.detected_header_row);
         $('#to-step3').disabled = true;
+        triggerParseEmail();
     } catch (err) {
         console.error(err);
         alert('切换 Sheet 失败：' + err.message);
@@ -1454,14 +1494,23 @@ $('#email-full-preview-btn').addEventListener('click', async () => {
 $('#email-header-rows').addEventListener('input', () => {
     updateDataStartFromHeaders('#email-header-rows', '#email-data-start');
     if (state.email.preview) renderEmailPreview();
+    triggerParseEmail();
 });
 
 $('#email-skip-rows').addEventListener('input', () => {
     if (state.email.preview) renderEmailPreview();
+    triggerParseEmail();
 });
 
 $('#email-data-end-col').addEventListener('input', () => {
     if (state.email.preview) renderEmailPreview();
+    triggerParseEmail();
+});
+
+// 数据起始行 / 结束行 修改后重新触发解析校验
+['email-data-start', 'email-data-end'].forEach(id => {
+    const el = $(`#${id}`);
+    if (el) el.addEventListener('input', triggerParseEmail);
 });
 
 async function parseEmail() {
