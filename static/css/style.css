@@ -274,13 +274,15 @@ th.row-header {
     text-align: center;
     position: sticky;
     left: 0;
-    z-index: 10;
+    z-index: 12;
     min-width: 44px;
 }
 th.row-header.corner {
     background: #e0e7ff;
-    z-index: 12;
+    z-index: 14;
 }
+/* 确保 thead 内的行号列不被 .table-wrap thead th 的 z-index:11 覆盖 */
+.table-wrap thead th.row-header { z-index: 12; }
 /* 预览表冻结的社区/姓名列 */
 .table-wrap th.freeze-col,
 .table-wrap td.freeze-col {
