@@ -1311,29 +1311,32 @@ def api_search():
 
 @app.route("/api/person/<int:person_id>", methods=["GET"])
 def api_person(person_id):
-    year = request.args.get("year", type=int)
-    month = request.args.get("month", type=int)
+    # 列出该人员的所有历史导入记录（按年月倒序），不再按单月过滤
     with get_db() as conn:
-        if not (year and month):
-            year, month = get_latest_month(conn)
-        if not (year and month):
-            return jsonify({"error": "未找到"}), 404
         rows = conn.execute(
             """
             SELECT p.id, p.community, p.name, p.email, p.email_status, p.email_issues,
                    s.year, s.month, sr.gross_salary, sr.total_deduction, sr.net_salary, sr.bank_account, sr.data_json
             FROM persons p
             JOIN salary_imports s ON p.import_id = s.id
-            JOIN salary_records sr ON sr.person_id = p.id AND sr.import_id = s.id
-            WHERE p.id = ? AND s.year = ? AND s.month = ?
-            ORDER BY s.year DESC, s.month DESC
+            LEFT JOIN salary_records sr ON sr.person_id = p.id AND sr.import_id = s.id
+            WHERE p.id = ?
+            ORDER BY s.year DESC, s.month DESC, s.id DESC
             """,
-            (person_id, year, month)
+            (person_id,)
         ).fetchall()
     if not rows:
         return jsonify({"error": "未找到"}), 404
+    # 列顺序以最新一次导入的 detail keys 为准
+    detail_keys = []
     history = []
     for r in rows:
+        detail = json.loads(r["data_json"] or "{}")
+        # 旧版导入可能只有 persons 没有 salary_records，用 persons 字段兜底
+        if not detail:
+            detail = {"社区": r["community"], "姓名": r["name"]}
+        if not detail_keys:
+            detail_keys = list(detail.keys())
         history.append({
             "year": r["year"],
             "month": r["month"],
@@ -1341,7 +1344,7 @@ def api_person(person_id):
             "total_deduction": r["total_deduction"],
             "net_salary": r["net_salary"],
             "bank_account": r["bank_account"],
-            "detail": json.loads(r["data_json"] or "{}"),
+            "detail": detail,
         })
     first = rows[0]
     return jsonify({
@@ -1351,6 +1354,7 @@ def api_person(person_id):
         "email": first["email"],
         "email_status": first["email_status"],
         "email_issues": first["email_issues"],
+        "detail_keys": detail_keys,
         "history": history,
     })
 

@@ -2423,25 +2423,49 @@ function showValidationHelp() {
 }
 
 async function showPersonDetail(id, year, month) {
-    $('#modal').classList.remove('import-detail-modal');
-    let url = `/api/person/${id}`;
-    if (year && month) url += `?year=${year}&month=${month}`;
-    const r = await fetch(url).then(r => r.json());
+    $('#modal').classList.add('import-detail-modal');
+    // 不再按单月过滤，后端返回该人员所有历史导入记录
+    const r = await fetch(`/api/person/${id}`).then(r => r.json());
     if (r.error) return;
     const body = $('#modal-body');
     let html = `<h2>${escapeHtml(r.community)} · ${escapeHtml(r.name)}</h2>`;
     if (r.email_issues) html += `<p style="color:var(--danger)">邮箱问题：${escapeHtml(r.email_issues)}</p>`;
 
-    if (!r.history.length) {
-        html += '<p>该月份暂无记录。</p>';
+    const history = r.history || [];
+    if (!history.length) {
+        html += '<p>暂无历史记录。</p>';
     } else {
-        const h = r.history[0];
-        html += `<h3>${h.year}年${h.month}月导入详情</h3>`;
-        html += `<table class="detail-table"><tbody>`;
-        Object.entries(h.detail).forEach(([key, value]) => {
-            html += `<tr><th>${escapeHtml(key)}</th><td>${escapeHtml(value == null ? '' : String(value))}</td></tr>`;
+        // 列顺序以最新一次导入的 detail keys 为准；补充其它历史记录中存在的列
+        const detailCols = [...(r.detail_keys || [])];
+        const seen = new Set(detailCols);
+        history.forEach(h => {
+            Object.keys(h.detail || {}).forEach(k => {
+                if (!seen.has(k)) { seen.add(k); detailCols.push(k); }
+            });
         });
-        html += `<tr><th>邮箱</th><td>${escapeHtml(r.email || '-')}</td></tr>`;
+        // 找出社区/姓名索引用于冻结列
+        const communityIdx = detailCols.indexOf('社区');
+        const nameIdx = detailCols.indexOf('姓名');
+        const freezeClass = (i) => {
+            if (i === communityIdx) return 'freeze-1';
+            if (i === nameIdx) return 'freeze-2';
+            return '';
+        };
+        html += `<table class="search-results-table"><thead><tr>`;
+        detailCols.forEach((col, i) => {
+            const cls = freezeClass(i);
+            html += `<th${cls ? ` class="${cls}"` : ''}>${escapeHtml(col)}</th>`;
+        });
+        html += `<th>年月</th><th>邮箱</th></tr></thead><tbody>`;
+        history.forEach(h => {
+            html += `<tr>`;
+            detailCols.forEach((col, i) => {
+                const cls = freezeClass(i);
+                const v = (h.detail || {})[col];
+                html += `<td${cls ? ` class="${cls}"` : ''}>${escapeHtml(v == null ? '' : String(v))}</td>`;
+            });
+            html += `<td>${h.year}年${h.month}月</td><td>${escapeHtml(r.email || '-')}</td></tr>`;
+        });
         html += `</tbody></table>`;
     }
     body.innerHTML = html;
