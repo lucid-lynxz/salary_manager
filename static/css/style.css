@@ -386,21 +386,34 @@ tr.omitted-row td.omitted-cell {
 }
 .status-icon.error {
     background: #dc3545;
+    cursor: pointer;
     animation: pulse 1.2s ease-in-out infinite;
 }
-.status-icon.error::before,
+.status-icon.error::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 3px;
+    transform: translateX(-50%);
+    width: 2px;
+    height: 7px;
+    background: #fff;
+    border-radius: 1px;
+}
 .status-icon.error::after {
     content: '';
     position: absolute;
     left: 50%;
-    top: 50%;
-    width: 8px;
+    bottom: 3px;
+    transform: translateX(-50%);
+    width: 2px;
     height: 2px;
+    border-radius: 50%;
     background: #fff;
-    border-radius: 1px;
 }
-.status-icon.error::before { transform: translate(-50%, -50%) rotate(45deg); }
-.status-icon.error::after  { transform: translate(-50%, -50%) rotate(-45deg); }
+.status-icon.ok {
+    cursor: default;
+}
 @keyframes pulse {
     0%, 100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.5); }
     50% { box-shadow: 0 0 0 6px rgba(220, 53, 69, 0); }

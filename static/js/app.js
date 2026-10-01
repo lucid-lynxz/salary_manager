@@ -538,15 +538,11 @@ $('#wizard-steps').addEventListener('click', (e) => {
     if (!state.unlockedSteps[n]) return;
     // 顶部步骤按钮也需遵守校验：步骤2需工资表校验通过，步骤3需邮箱表校验通过
     if (n === 2 && $('#to-step2').disabled) {
-        alert('请先处理工资表中的异常项后再进入下一步');
-        const validationEl = $('#salary-validation');
-        if (validationEl) validationEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        alert('请先处理工资表中的异常项后再进入下一步（可点击标题旁的红色感叹号定位到异常区域）');
         return;
     }
     if (n === 3 && $('#to-step3').disabled) {
-        alert('请先处理邮箱表中的异常项后再进入下一步');
-        const emailValidationEl = $('#email-validation');
-        if (emailValidationEl) emailValidationEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        alert('请先处理邮箱表中的异常项后再进入下一步（可点击标题旁的红色感叹号定位到异常区域）');
         return;
     }
     goStep(n);
@@ -633,6 +629,14 @@ $('#salary-sheet').addEventListener('change', async () => {
 });
 
 $('#salary-preview-btn').addEventListener('click', parseSalary);
+$('#salary-status-icon').addEventListener('click', () => {
+    const el = $('#salary-validation');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+$('#email-status-icon').addEventListener('click', () => {
+    const el = $('#email-validation');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
 
 $('#salary-full-preview-btn').addEventListener('click', async () => {
     const btn = $('#salary-full-preview-btn');
@@ -754,13 +758,7 @@ async function parseSalary() {
             (vs.accountEmptyIssues && vs.accountEmptyIssues.length > 0) ||
             (vs.duplicateNameGroups && vs.duplicateNameGroups.length > 0)
         );
-        // 有异常时自动滚动到下方校验区域
-        if (hasBlocking) {
-            setTimeout(() => {
-                const validationEl = $('#salary-validation');
-                if (validationEl) validationEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }, 100);
-        }
+        // 有异常时不自动滚动，由用户点击红色感叹号图标触发滚动
         updateSalaryNextButton();
         unlockStep(2);
         renderSalaryPreview();
