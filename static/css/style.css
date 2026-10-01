@@ -624,6 +624,13 @@ tr.omitted-row td.omitted-cell {
     justify-content: flex-end;
     gap: 12px;
 }
+.confirm-modal-actions .btn:focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+}
+.confirm-modal-actions .btn.danger:focus-visible {
+    outline-color: var(--danger);
+}
 @keyframes confirm-modal-fade {
     from { opacity: 0; }
     to { opacity: 1; }

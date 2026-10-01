@@ -2645,6 +2645,11 @@ document.addEventListener('click', (e) => {
 // 自定义确认弹框（居中显示，替代原生 confirm）
 function confirmModal(message) {
     return new Promise((resolve) => {
+        // 防止重复弹出：已有弹框时直接返回取消
+        if (document.querySelector('.confirm-modal-overlay')) {
+            resolve(false);
+            return;
+        }
         const overlay = document.createElement('div');
         overlay.className = 'confirm-modal-overlay';
         overlay.innerHTML = `<div class="confirm-modal-box">
@@ -2655,12 +2660,28 @@ function confirmModal(message) {
             </div>
         </div>`;
         document.body.appendChild(overlay);
-        overlay.querySelector('[data-confirm="ok"]').addEventListener('click', () => { overlay.remove(); resolve(true); });
-        overlay.querySelector('[data-confirm="cancel"]').addEventListener('click', () => { overlay.remove(); resolve(false); });
-        overlay.addEventListener('click', (e) => { if (e.target === overlay) { overlay.remove(); resolve(false); } });
-        // 按 ESC 取消
-        const escHandler = (e) => { if (e.key === 'Escape') { overlay.remove(); resolve(false); document.removeEventListener('keydown', escHandler); } };
-        document.addEventListener('keydown', escHandler);
+        const okBtn = overlay.querySelector('[data-confirm="ok"]');
+        const cancelBtn = overlay.querySelector('[data-confirm="cancel"]');
+        let settled = false;
+        const close = (result) => {
+            if (settled) return;
+            settled = true;
+            overlay.remove();
+            resolve(result);
+            document.removeEventListener('keydown', keyHandler, true);
+        };
+        okBtn.addEventListener('click', () => close(true));
+        cancelBtn.addEventListener('click', () => close(false));
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(false); });
+        // 键盘交互：ESC=取消, Enter/Space=确定（默认高亮按钮）
+        // 用捕获阶段监听，stopPropagation+preventDefault 阻止事件到达底层"删除"按钮，避免重复弹出
+        const keyHandler = (e) => {
+            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(false); }
+            else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); e.stopPropagation(); close(true); }
+        };
+        document.addEventListener('keydown', keyHandler, true);
+        // 打开后立即聚焦"确定"按钮，使其成为默认按钮
+        okBtn.focus();
     });
 }
 
