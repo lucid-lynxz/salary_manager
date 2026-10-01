@@ -815,7 +815,7 @@ def api_parse_config():
             valid_count = 0
             duplicate_count = 0
             for cr in cleaned_records:
-                is_duplicate = email_counts.get(cr["cleaned"], 0) > 1 and "格式错误" not in cr["errors"] and "缺少 @" not in cr["errors"]
+                is_duplicate = cr["cleaned"] and email_counts.get(cr["cleaned"], 0) > 1 and "格式错误" not in cr["errors"] and "缺少 @" not in cr["errors"]
                 if is_duplicate:
                     duplicate_count += 1
                     continue
@@ -827,7 +827,7 @@ def api_parse_config():
             # 构建重复组（仅包含出现次数 > 1 且格式正确的邮箱）
             seen_emails = set()
             for email, count in email_counts.items():
-                if count <= 1:
+                if count <= 1 or not email:
                     continue
                 rows = [cr for cr in cleaned_records if cr["cleaned"] == email]
                 if not rows:

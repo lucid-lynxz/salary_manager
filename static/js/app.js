@@ -1586,6 +1586,8 @@ function rebuildValidationState() {
     const otherCount = vs.issues.length;
     vs.duplicateGroups = newGroups;
     vs.invalid = duplicateCount + otherCount;
+    // 同步更新 valid，保证 valid + invalid = total，避免记录"消失"
+    vs.valid = vs.total - vs.invalid;
 }
 
 function confirmDuplicateRow(groupIdx, rowIdx) {
