@@ -1,7 +1,7 @@
 // State
 const state = {
     salary: { fileId: null, filename: null, config: null, parsed: null, preview: null, previewRowIndices: [], mapping: null, validationState: null, overrides: {}, deletedRows: [], fullPreview: false, previewPage: 1, previewPageSize: 20 },
-    email: { fileId: null, filename: null, config: null, parsed: null, preview: null, previewRowIndices: [], mapping: null, overrides: {}, overrideLog: {}, validationState: null, fullPreview: false, previewPage: 1, previewPageSize: 20 },
+    email: { fileId: null, filename: null, config: null, parsed: null, preview: null, previewRowIndices: [], mapping: null, overrides: {}, overrideLog: {}, deletedRows: [], validationState: null, fullPreview: false, previewPage: 1, previewPageSize: 20 },
     currentStep: 1,
     unlockedSteps: { 1: true },
     detectedYear: null,
@@ -414,9 +414,32 @@ function renderEmailPreview() {
     const skipRows = parseHeaderRows($('#email-skip-rows').value);
     const filtered = filterPreviewBySkipRows(state.email.preview, state.email.previewRowIndices, skipRows);
     const sliced = slicePreviewByEndCol(filtered.rows, $('#email-data-end-col').value, filtered.rowIndices);
+    // 应用删除行与用户修正的社区/姓名/邮箱覆盖
+    const mapping = state.email.mapping || {};
+    const deletedEmail = new Set(state.email.deletedRows || []);
+    const ov = state.email.overrides || {};
+    const headerRowSet = new Set(parseHeaderRows($('#email-header-rows').value));
+    const colMap = {
+        community: mapping.community,
+        name: mapping.name,
+        email: mapping.email,
+    };
+    const visible = { rows: [], rowIndices: [] };
+    for (let i = 0; i < sliced.rows.length; i++) {
+        const excelRow = sliced.rowIndices[i];
+        if (!headerRowSet.has(excelRow) && deletedEmail.has(excelRow)) continue;
+        const row = sliced.rows[i].slice();
+        const o = ov[excelRow] || {};
+        for (const [key, colIdx] of Object.entries(colMap)) {
+            if (colIdx == null || isNaN(colIdx)) continue;
+            if (o[key] !== undefined && colIdx < row.length) row[colIdx] = o[key];
+        }
+        visible.rows.push(row);
+        visible.rowIndices.push(excelRow);
+    }
     const pagination = state.email.fullPreview ? { page: state.email.previewPage, pageSize: state.email.previewPageSize } : null;
     const freezeCols = getFreezeCols(state.email.mapping);
-    const pageInfo = renderTable($('#email-preview-table'), sliced.rows, 1, parseHeaderRows($('#email-header-rows').value), sliced.rowIndices, pagination, freezeCols);
+    const pageInfo = renderTable($('#email-preview-table'), visible.rows, 1, parseHeaderRows($('#email-header-rows').value), visible.rowIndices, pagination, freezeCols);
     renderPreviewPagination('email', pageInfo);
 }
 
@@ -523,7 +546,7 @@ $$('.tab-btn').forEach(btn => {
         $$('.tab-panel').forEach(p => p.classList.remove('active'));
         btn.classList.add('active');
         $(`#tab-${tab}`).classList.add('active');
-        if (tab === 'search') loadMonths();
+        if (tab === 'search') { loadMonths(); loadCommunities(); }
         if (tab === 'history') loadHistory();
     });
 });
@@ -560,11 +583,21 @@ $('#wizard-steps').addEventListener('click', (e) => {
     if (!state.unlockedSteps[n]) return;
     // 顶部步骤按钮也需遵守校验：步骤2需工资表校验通过，步骤3需邮箱表校验通过
     if (n === 2 && $('#to-step2').disabled) {
-        alert('请先处理工资表中的异常项后再进入下一步（可点击标题旁的红色感叹号定位到异常区域）');
+        confirmModal('请先处理工资表中的异常项后再进入下一步（可点击标题旁的红色感叹号定位到异常区域）').then((ok) => {
+            if (ok) {
+                const el = $('#salary-validation');
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        });
         return;
     }
     if (n === 3 && $('#to-step3').disabled) {
-        alert('请先处理邮箱表中的异常项后再进入下一步（可点击标题旁的红色感叹号定位到异常区域）');
+        confirmModal('请先处理邮箱表中的异常项后再进入下一步（可点击标题旁的红色感叹号定位到异常区域）').then((ok) => {
+            if (ok) {
+                const el = $('#email-validation');
+                if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+        });
         return;
     }
     goStep(n);
@@ -966,6 +999,11 @@ function startSalaryEdit(groupType, groupIdx, rowIdx) {
     }
     renderSalaryValidation();
     updateSalaryNextButton();
+    // 渲染完成后自动聚焦到第一个输入框
+    setTimeout(() => {
+        const input = document.querySelector(`[data-edit^="${groupType}|${groupIdx}|"]`);
+        if (input) input.focus();
+    }, 0);
 }
 
 function cancelSalaryEdit(groupType, groupIdx, rowIdx) {
@@ -1166,21 +1204,22 @@ function renderSalaryValidation() {
             if (r.editing) {
                 html += `<div class="duplicate-group editing">
                     <div class="group-header"><span class="group-email">${escapeHtml(r.community)} / ${escapeHtml(r.name)}</span></div>
-                    <table class="salary-table"><thead><tr><th>行号</th><th>上次账号</th><th>本次账号（可编辑）</th><th>操作</th></tr></thead><tbody>
+                    <table class="salary-table" style="table-layout:fixed"><colgroup><col style="width:60px"><col style="width:180px"><col style="width:180px"><col style="width:160px"></colgroup><thead><tr><th>行号</th><th>上次账号</th><th>本次账号（可编辑）</th><th>操作</th></tr></thead><tbody>
                     <tr><td>${escapeHtml(r.row)}</td><td>${escapeHtml(r.previous || '')}</td>
-                    <td><input class="salary-edit-input" type="text" data-edit="changed|${gi}|-|account_clean" value="${escapeHtml(r.editFields.account_clean !== undefined ? r.editFields.account_clean : r.account_clean)}" style="width:160px"></td>
+                    <td><input class="salary-edit-input" type="text" data-edit="changed|${gi}|-|account_clean" value="${escapeHtml(r.editFields.account_clean !== undefined ? r.editFields.account_clean : r.account_clean)}" style="width:100%;box-sizing:border-box"></td>
                     <td><button class="btn small primary" data-salary-save="changed|${gi}|-">保存</button>
-                        <button class="btn small" data-salary-cancel="changed|${gi}|-">取消</button></td></tr>
+                        <button class="btn small text" data-salary-cancel="changed|${gi}|-">取消</button></td></tr>
                     </tbody></table></div>`;
             } else {
                 html += `<div class="duplicate-group ${allConfirmed ? 'confirmed' : ''}">
                     <div class="group-header">
                         <span class="group-email">${escapeHtml(r.community)} / ${escapeHtml(r.name)}</span>
-                        ${allConfirmed ? '<span class="group-status">已确认</span>' : `<button class="btn small" data-salary-confirm="changed|${gi}|-">确认</button>`}
                     </div>
-                    <table class="salary-table"><thead><tr><th>行号</th><th>上次账号</th><th>本次账号</th><th>操作</th></tr></thead><tbody>
-                    <tr><td>${escapeHtml(r.row)}</td><td>${escapeHtml(r.previous || '')}</td><td>${escapeHtml(r.account_clean)}</td>
-                    <td><button class="btn small" data-salary-edit="changed|${gi}|-">编辑</button>${allConfirmed ? '<span class="confirmed-tag">已确认</span>' : ''}</td></tr>
+                    <table class="salary-table" style="table-layout:fixed"><colgroup><col style="width:60px"><col style="width:180px"><col style="width:180px"><col style="width:160px"></colgroup><thead><tr><th>行号</th><th>上次账号</th><th>本次账号</th><th>操作</th></tr></thead><tbody>
+                    <tr class="${allConfirmed ? 'confirmed-row' : ''}"><td>${escapeHtml(r.row)}</td><td>${escapeHtml(r.previous || '')}</td><td>${escapeHtml(r.account_clean)}</td>
+                    <td>${!allConfirmed ? `<button class="btn small" data-salary-confirm="changed|${gi}|-">确认</button>` : '<span class="confirmed-tag">已确认</span>'}
+                        <button class="btn small text" data-salary-edit="changed|${gi}|-">修改</button>
+                        <button class="btn small text danger" data-salary-delete="changed|${gi}|-">删除</button></td></tr>
                     </tbody></table></div>`;
             }
         });
@@ -1254,16 +1293,16 @@ function renderSalaryValidation() {
                     <span class="group-email">${escapeHtml(g.community)} - ${escapeHtml(g.name)}</span>
                     <span class="group-count">共 ${g.rows.length} 条</span>
                 </div>
-                <table class="salary-table"><thead><tr><th>行号</th><th>社区</th><th>姓名</th><th>操作</th></tr></thead><tbody>`;
+                <table class="salary-table" style="table-layout:fixed"><colgroup><col style="width:60px"><col style="width:180px"><col style="width:180px"><col style="width:160px"></colgroup><thead><tr><th>行号</th><th>社区</th><th>姓名</th><th>操作</th></tr></thead><tbody>`;
             g.rows.forEach((r, ri) => {
                 if (r.editing) {
                     html += `<tr class="editing-row">
                         <td>${escapeHtml(r.row)}</td>
-                        <td><input class="salary-edit-input" type="text" data-name-edit-input="community|${gi}|${ri}" value="${escapeHtml(r.editFields.community !== undefined ? r.editFields.community : r.community)}"></td>
-                        <td><input class="salary-edit-input" type="text" data-name-edit-input="name|${gi}|${ri}" value="${escapeHtml(r.editFields.name !== undefined ? r.editFields.name : r.name)}"></td>
+                        <td><input class="salary-edit-input" type="text" data-name-edit-input="community|${gi}|${ri}" value="${escapeHtml(r.editFields.community !== undefined ? r.editFields.community : r.community)}" style="width:100%;box-sizing:border-box"></td>
+                        <td><input class="salary-edit-input" type="text" data-name-edit-input="name|${gi}|${ri}" value="${escapeHtml(r.editFields.name !== undefined ? r.editFields.name : r.name)}" style="width:100%;box-sizing:border-box"></td>
                         <td>
                             <button class="btn small primary" data-name-save="${gi}|${ri}">保存</button>
-                            <button class="btn small" data-name-cancel="${gi}|${ri}">取消</button>
+                            <button class="btn small text" data-name-cancel="${gi}|${ri}">取消</button>
                         </td>
                     </tr>`;
                 } else {
@@ -1273,7 +1312,7 @@ function renderSalaryValidation() {
                         <td>${escapeHtml(r.name)}</td>
                         <td>
                             <button class="btn small" data-name-edit="${gi}|${ri}">修改</button>
-                            <button class="btn small danger" data-name-delete="${gi}|${ri}">删除</button>
+                            <button class="btn small text danger" data-name-delete="${gi}|${ri}">删除</button>
                         </td>
                     </tr>`;
                 }
@@ -1360,6 +1399,11 @@ function renderSalaryValidation() {
             row.editing = true;
             row.editFields = { community: row.community, name: row.name };
             renderSalaryValidation();
+            // 渲染完成后自动聚焦到社区输入框
+            setTimeout(() => {
+                const input = document.querySelector(`[data-name-edit-input="community|${gi}|${ri}"]`);
+                if (input) input.focus();
+            }, 0);
         });
     });
     el.querySelectorAll('[data-name-save]').forEach(btn => {
@@ -1401,6 +1445,22 @@ function renderSalaryValidation() {
             const [field, gi, ri] = input.dataset.nameEditInput.split('|');
             const row = state.salary.validationState.duplicateNameGroups[parseInt(gi)].rows[parseInt(ri)];
             row.editFields[field] = input.value;
+        });
+    });
+
+    // 账号变化：删除
+    el.querySelectorAll('[data-salary-delete]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const parts = btn.dataset.salaryDelete.split('|');
+            const groupType = parts[0], groupIdx = parseInt(parts[1]);
+            if (groupType !== 'changed') return;
+            const row = state.salary.validationState.accountChangedGroups[groupIdx];
+            if (!await confirmModal(`确定删除第 ${row.row} 行（${row.community} - ${row.name}）的数据吗？删除后该条工资记录不会导入。`)) return;
+            state.salary.deletedRows.push(row.row);
+            rebuildSalaryValidationState();
+            renderSalaryValidation();
+            renderSalaryPreview();
+            updateSalaryNextButton();
         });
     });
 }
@@ -1537,6 +1597,7 @@ async function parseEmail() {
         state.email.parsed = res;
         state.email.overrides = {};
         state.email.overrideLog = {};
+        state.email.deletedRows = [];
         state.email.mapping = res.suggested_mapping || {};
 
         const headers = res.headers;
@@ -1562,141 +1623,190 @@ function initValidationState(validation) {
         state.email.validationState = null;
         return;
     }
-    const groups = (validation.duplicate_groups || []).map(g => ({
-        email: g.email,
-        rows: g.rows.map(r => ({
-            ...r,
-            confirmed: false,
-            editing: false,
-            editValue: '',
-            current: r.cleaned,
-        })),
-    }));
+    state.email.confirmedRows = [];
+    state.email.editing = null;
     state.email.validationState = {
+        allRows: validation.all_rows || [],
         total: validation.total,
         valid: validation.valid,
         invalid: validation.invalid,
-        issues: validation.issues || [],
-        duplicateGroups: groups,
-        duplicateNameGroups: validation.duplicate_name_groups || [],
+        issues: [],
+        duplicateGroups: [],
+        duplicateNameGroups: [],
     };
+    rebuildValidationState();
 }
 
+// 清洗与报错文案与后端 clean_email / validate_email 保持一致
 function validateEmailLocal(email) {
+    const cleaned = String(email == null ? '' : email)
+        .trim().replace(/[\s\n\r\t]+/g, '').replace(/＠/g, '@').toLowerCase();
+    if (!cleaned) return { email: '', errors: ['邮箱为空'] };
     const errors = [];
-    if (!email || !email.trim()) {
-        errors.push('邮箱为空');
-        return { email: '', errors };
-    }
-    let cleaned = email.trim().replace(/[\s\n\r\t]+/g, '').replace(/＠/g, '@').replace(/\bat\b/gi, '@').replace(/＠/g, '@').toLowerCase();
-    if (!cleaned.includes('@')) errors.push('缺少 @');
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleaned)) errors.push('格式错误');
+    if (!cleaned.includes('@')) errors.push('缺少 @ 符号');
+    if (!/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(cleaned)) errors.push('邮箱格式无效');
     return { email: cleaned, errors };
 }
 
+// 依据原始清洗结果 + 本地覆盖/删除，重算三类异常分组
 function rebuildValidationState() {
     const vs = state.email.validationState;
     if (!vs) return;
-    // 收集所有当前有效邮箱（已确认或不在重复组中）
-    const allEmails = [];
-    vs.duplicateGroups.forEach(g => {
-        g.rows.forEach(r => {
-            allEmails.push(r.current);
-        });
-    });
-    // 重新计算重复
-    const counts = {};
-    allEmails.forEach(e => { counts[e] = (counts[e] || 0) + 1; });
+    const ov = state.email.overrides || {};
+    const deleted = new Set(state.email.deletedRows || []);
 
-    // 合并相同的重复组
-    const groupsByEmail = {};
-    vs.duplicateGroups.forEach(g => {
-        g.rows.forEach(r => {
-            const e = r.current;
-            if (!groupsByEmail[e]) groupsByEmail[e] = [];
-            groupsByEmail[e].push(r);
-        });
-    });
+    const resolve = r => {
+        const o = ov[r.row] || {};
+        const community = String(o.community !== undefined ? o.community : (r.community || '')).trim();
+        const name = String(o.name !== undefined ? o.name : (r.name || '')).trim();
+        const raw = o.email !== undefined ? o.email : r.raw;
+        const v = validateEmailLocal(raw);
+        return { ...r, community, name, raw, current: v.email, errors: v.errors };
+    };
+    const rows = vs.allRows.filter(r => !deleted.has(r.row)).map(resolve);
 
-    const newGroups = [];
-    Object.entries(groupsByEmail).forEach(([email, rows]) => {
-        if (rows.length <= 1) return;
-        // 若该邮箱存在基础格式错误，不归为重复组
-        const hasFormatError = rows.some(r => {
-            const v = validateEmailLocal(r.current);
-            return v.errors.length > 0;
-        });
-        if (hasFormatError) return;
-        newGroups.push({ email, rows });
+    const emailCounts = {};
+    rows.forEach(r => { if (r.current) emailCounts[r.current] = (emailCounts[r.current] || 0) + 1; });
+    const byEmail = {};
+    rows.forEach(r => {
+        if (!r.current || r.errors.length || emailCounts[r.current] <= 1) return;
+        (byEmail[r.current] = byEmail[r.current] || []).push(r);
     });
+    vs.duplicateGroups = Object.entries(byEmail).map(([email, groupRows]) => ({ email, rows: groupRows }));
 
-    // 非重复记录数 = 总记录 - 重复组记录数 - 其他 issues 记录数
-    const duplicateCount = newGroups.reduce((sum, g) => sum + g.rows.length, 0);
-    const otherCount = vs.issues.length;
-    vs.duplicateGroups = newGroups;
-    vs.invalid = duplicateCount + otherCount;
-    // 同步更新 valid，保证 valid + invalid = total，避免记录"消失"
+    const dupEmailRows = new Set();
+    vs.duplicateGroups.forEach(g => g.rows.forEach(r => dupEmailRows.add(r.row)));
+    vs.issues = rows.filter(r => r.errors.length && !dupEmailRows.has(r.row));
+
+    const nameCounts = {};
+    rows.forEach(r => { if (r.community && r.name) { const k = `${r.community}|${r.name}`; nameCounts[k] = (nameCounts[k] || 0) + 1; } });
+    const byName = {};
+    rows.forEach(r => {
+        if (!r.community || !r.name) return;
+        const k = `${r.community}|${r.name}`;
+        if (nameCounts[k] <= 1) return;
+        (byName[k] = byName[k] || []).push(r);
+    });
+    vs.duplicateNameGroups = Object.entries(byName).map(([k, groupRows]) => ({
+        community: groupRows[0].community,
+        name: groupRows[0].name,
+        count: groupRows.length,
+        rows: groupRows,
+    }));
+
+    vs.deletedRecords = vs.allRows.filter(r => deleted.has(r.row)).map(resolve);
+    vs.total = rows.length;
+    vs.invalid = dupEmailRows.size + vs.issues.length;
     vs.valid = vs.total - vs.invalid;
 }
 
-function confirmDuplicateRow(groupIdx, rowIdx) {
+function findEmailRow(row) {
     const vs = state.email.validationState;
-    const row = vs.duplicateGroups[groupIdx].rows[rowIdx];
-    if (row.editing) return;
-    row.confirmed = true;
+    if (!vs) return null;
+    const all = vs.issues
+        .concat(vs.duplicateGroups.reduce((acc, g) => acc.concat(g.rows), []))
+        .concat(vs.duplicateNameGroups.reduce((acc, g) => acc.concat(g.rows), []));
+    return all.find(r => r.row === row) || null;
+}
+
+function emailRowConfirmed(row) {
+    return (state.email.confirmedRows || []).indexOf(row) >= 0;
+}
+
+function confirmEmailRows(rows) {
+    rows.forEach(r => { if (!emailRowConfirmed(r)) state.email.confirmedRows.push(r); });
     renderValidation();
     updateStep3Button();
 }
 
-function confirmDuplicateGroup(groupIdx) {
+function confirmAllIssues() {
     const vs = state.email.validationState;
-    vs.duplicateGroups[groupIdx].rows.forEach(r => {
-        if (!r.editing) r.confirmed = true;
-    });
-    renderValidation();
-    updateStep3Button();
+    confirmEmailRows(vs.issues.filter(r => !emailRowConfirmed(r.row)).map(r => r.row));
 }
 
-function editDuplicateRow(groupIdx, rowIdx) {
+function confirmAllDuplicates() {
     const vs = state.email.validationState;
-    const row = vs.duplicateGroups[groupIdx].rows[rowIdx];
-    row.editing = true;
-    row.editValue = row.current;
-    renderValidation();
+    confirmEmailRows(vs.duplicateGroups.reduce((acc, g) => acc.concat(g.rows.map(r => r.row)), []));
 }
 
-function saveDuplicateEdit(groupIdx, rowIdx) {
-    const vs = state.email.validationState;
-    const row = vs.duplicateGroups[groupIdx].rows[rowIdx];
-    const newEmailRaw = row.editValue;
-    const v = validateEmailLocal(newEmailRaw);
-    if (v.errors.length) {
-        alert('邮箱格式不正确：' + v.errors.join('；'));
-        return;
+function startEmailEdit(row, kind) {
+    const rec = findEmailRow(row);
+    const editing = { row, kind, value: '', community: '', name: '' };
+    if (rec) {
+        editing.value = rec.current || '';
+        editing.community = rec.community || '';
+        editing.name = rec.name || '';
     }
-    const key = `${row.community}|${row.name}`;
-    state.email.overrides[key] = v.email;
-    state.email.overrideLog[key] = {
-        community: row.community,
-        name: row.name,
-        original: row.raw,
-        current: v.email,
-    };
-    updateEmailPreviewForOverride(row.row, v.email);
-    row.current = v.email;
-    row.editing = false;
-    row.confirmed = false; // 修改后需再次确认
+    state.email.editing = editing;
+    renderValidation();
+    // 渲染完成后自动聚焦到第一个输入框
+    setTimeout(() => {
+        let input = null;
+        if (kind === 'email') {
+            input = document.querySelector(`[data-email-value="${row}"]`);
+        } else if (kind === 'identity') {
+            input = document.querySelector(`[data-email-community="${row}"]`);
+        }
+        if (input) input.focus();
+    }, 0);
+}
+
+function cancelEmailEdit() {
+    state.email.editing = null;
+    renderValidation();
+}
+
+function saveEmailEdit(row) {
+    const editing = state.email.editing;
+    if (!editing || editing.row !== row) return;
+    const rec = findEmailRow(row);
+    const ov = { ...(state.email.overrides[row] || {}) };
+
+    if (editing.kind === 'email') {
+        const v = validateEmailLocal(editing.value);
+        if (v.errors.length) { alert('邮箱格式不正确：' + v.errors.join('；')); return; }
+        state.email.overrides[row] = { ...ov, email: v.email };
+        state.email.overrideLog[row] = {
+            row,
+            community: rec ? rec.community : '',
+            name: rec ? rec.name : '',
+            original: rec ? rec.raw : '',
+            current: v.email,
+        };
+    } else {
+        const community = editing.community.trim();
+        const name = editing.name.trim();
+        if (!community || !name) { alert('社区和姓名不能为空'); return; }
+        state.email.overrides[row] = { ...ov, community, name };
+    }
+    // 修改后需重新确认
+    state.email.confirmedRows = state.email.confirmedRows.filter(r => r !== row);
+    state.email.editing = null;
     rebuildValidationState();
     renderValidation();
+    renderEmailPreview();
     updateStep3Button();
 }
 
-function cancelDuplicateEdit(groupIdx, rowIdx) {
-    const vs = state.email.validationState;
-    const row = vs.duplicateGroups[groupIdx].rows[rowIdx];
-    row.editing = false;
-    row.editValue = '';
+async function deleteEmailRow(row) {
+    const rec = findEmailRow(row);
+    const label = rec ? `${rec.community} - ${rec.name}` : '';
+    if (!await confirmModal(`确定删除第 ${row} 行（${label}）的邮箱记录吗？删除后该人员在合并时会变成「未匹配」。`)) return;
+    if (!state.email.deletedRows.includes(row)) state.email.deletedRows.push(row);
+    state.email.confirmedRows = state.email.confirmedRows.filter(r => r !== row);
+    state.email.editing = null;
+    rebuildValidationState();
     renderValidation();
+    renderEmailPreview();
+    updateStep3Button();
+}
+
+function restoreEmailRow(row) {
+    state.email.deletedRows = state.email.deletedRows.filter(r => r !== row);
+    rebuildValidationState();
+    renderValidation();
+    renderEmailPreview();
+    updateStep3Button();
 }
 
 function updateStep3Button() {
@@ -1706,10 +1816,10 @@ function updateStep3Button() {
         updateStepClickable();
         return;
     }
-    const hasPendingDuplicates = vs.duplicateGroups.some(g => g.rows.some(r => !r.confirmed && !r.editing));
-    const hasIssues = vs.issues.length > 0;
-    const nameDup = (vs.duplicateNameGroups || []).length > 0;
-    const hasError = hasPendingDuplicates || hasIssues || nameDup;
+    const pending = vs.issues.some(r => !emailRowConfirmed(r.row))
+        || vs.duplicateGroups.some(g => g.rows.some(r => !emailRowConfirmed(r.row)));
+    const nameDup = vs.duplicateNameGroups.length > 0;
+    const hasError = pending || nameDup;
     $('#to-step3').disabled = hasError;
     // 更新状态图标
     const icon = $('#email-status-icon');
@@ -1726,25 +1836,15 @@ function updateStep3Button() {
     updateStepClickable();
 }
 
-function updateEmailPreviewForOverride(excelRow, newEmail) {
-    const preview = state.email.preview;
-    const rowIndices = state.email.previewRowIndices;
-    const mapping = state.email.mapping;
-    if (!preview || !rowIndices || !mapping || mapping.email == null) return;
-    const idx = rowIndices.findIndex(ri => ri === excelRow);
-    if (idx < 0 || idx >= preview.length) return;
-    preview[idx][mapping.email] = newEmail;
-    renderEmailPreview();
-}
-
 function renderOverrideLog() {
     const log = state.email.overrideLog || {};
     const entries = Object.values(log);
     if (!entries.length) return '';
     let html = `<div class="override-log"><h4>邮箱修改记录</h4>
-        <table><thead><tr><th>社区</th><th>姓名</th><th>原始邮箱</th><th>修改后邮箱</th></tr></thead><tbody>`;
+        <table><thead><tr><th>行号</th><th>社区</th><th>姓名</th><th>原始邮箱</th><th>修改后邮箱</th></tr></thead><tbody>`;
     entries.forEach(entry => {
         html += `<tr>
+            <td>${escapeHtml(entry.row)}</td>
             <td>${escapeHtml(entry.community)}</td>
             <td>${escapeHtml(entry.name)}</td>
             <td>${escapeHtml(entry.original)}</td>
@@ -1755,87 +1855,149 @@ function renderOverrideLog() {
     return html;
 }
 
+function emailOpsHtml(row, { canConfirm, editKind }) {
+    const editing = state.email.editing;
+    if (editing && editing.row === row && editing.kind === editKind) {
+        return `<button class="btn small primary" data-email-save="${row}">保存</button>
+            <button class="btn small text" data-email-cancel="${row}">取消</button>`;
+    }
+    let html = '';
+    if (canConfirm) {
+        html += emailRowConfirmed(row)
+            ? '<span class="confirmed-tag">已确认</span>'
+            : `<button class="btn small" data-email-confirm="${row}">确认</button>`;
+    }
+    html += `<button class="btn small text" data-email-edit="${row}|${editKind}">修改</button>
+        <button class="btn small text danger" data-email-delete="${row}">删除</button>`;
+    return html;
+}
+
+function emailCellHtml(row, value) {
+    const editing = state.email.editing;
+    if (editing && editing.row === row && editing.kind === 'email') {
+        return `<td><input type="text" class="email-edit-input" data-email-value="${row}" value="${escapeHtml(editing.value)}" style="width:100%;box-sizing:border-box"></td>`;
+    }
+    return `<td>${escapeHtml(value)}</td>`;
+}
+
 function renderValidation() {
     const el = $('#email-validation');
     const vs = state.email.validationState;
     if (!vs) { hide(el); return; }
     show(el);
+    const ov = state.email.overrides || {};
+    const editing = state.email.editing;
     let html = '';
-    // 社区+姓名重复警告（阻断性）
-    if (vs.duplicateNameGroups && vs.duplicateNameGroups.length > 0) {
-        html += `<div class="duplicate-name-warning">
-            <strong>⚠ 检测到 ${vs.duplicateNameGroups.length} 组「社区+姓名」重复</strong>
-            <p>系统默认「社区+姓名」唯一，重复会导致数据合并错乱。请修改邮箱表中的重复姓名后重新解析，修改后再进行下一步。</p>
-            <ul>${vs.duplicateNameGroups.map(g =>
-                `<li>${escapeHtml(g.community)} - ${escapeHtml(g.name)}（${g.count} 条，行号：${g.rows.map(r => r.row).join('、')}）</li>`
-            ).join('')}</ul>
-        </div>`;
-    }
+
     const invalidStat = vs.invalid > 0
         ? `<div class="stat invalid">无效：${vs.invalid} / ${vs.total}</div>`
+        : '';
+    const deletedStat = vs.deletedRecords && vs.deletedRecords.length
+        ? `<div class="stat invalid">已删除：${vs.deletedRecords.length}</div>`
         : '';
     html += `
         <div class="stats">
             <div class="stat valid">有效：${vs.valid} / ${vs.total}</div>
             ${invalidStat}
+            ${deletedStat}
             <button type="button" class="help-icon-btn" id="email-validation-help" title="查看校验说明">?</button>
         </div>
     `;
 
-    // 重复邮箱分组
-    if (vs.duplicateGroups.length) {
-        html += `<div class="duplicate-section"><h4>重复邮箱（请确认是否为正常共用邮箱，或修改）</h4>`;
-        vs.duplicateGroups.forEach((g, gi) => {
-            const allConfirmed = g.rows.every(r => r.confirmed);
-            html += `<div class="duplicate-group ${allConfirmed ? 'confirmed' : ''}" data-group-idx="${gi}">
+    if (vs.duplicateNameGroups.length) {
+        const pendingNameDup = vs.duplicateNameGroups.reduce((s, g) => s + g.rows.length, 0);
+        html += `<div class="duplicate-section"><h4>社区+姓名重复</h4>
+            <p class="hint-text">系统以「社区 + 姓名」为唯一键，重复会导致数据合并错乱。请修改其中一条的社区/姓名，或删除多余的那条。当前 ${pendingNameDup} 条待处理。</p>`;
+        vs.duplicateNameGroups.forEach(g => {
+            html += `<div class="duplicate-group">
                 <div class="group-header">
-                    <span class="group-email">${escapeHtml(g.email)}</span>
-                    <span class="group-count">共 ${g.rows.length} 人</span>
-                    ${allConfirmed ? '<span class="group-status">已确认</span>' : `<button class="btn small" data-confirm-group="${gi}">全部确认</button>`}
+                    <span class="group-email">${escapeHtml(g.community)} - ${escapeHtml(g.name)}</span>
+                    <span class="group-count">共 ${g.count} 条</span>
                 </div>
-                <table>
-                    <thead><tr><th>行号</th><th>社区</th><th>姓名</th><th>原始邮箱</th><th>当前邮箱</th><th>操作</th></tr></thead>
+                <table style="table-layout:fixed"><colgroup><col style="width:60px"><col style="width:120px"><col style="width:120px"><col style="width:180px"><col style="width:140px"></colgroup>
+                    <thead><tr><th>行号</th><th>社区</th><th>姓名</th><th>邮箱</th><th>操作</th></tr></thead>
                     <tbody>`;
-            g.rows.forEach((r, ri) => {
-                const key = `${r.community}|${r.name}`;
-                const isOverridden = state.email.overrides[key] !== undefined;
-                html += `<tr class="${r.confirmed ? 'confirmed-row' : ''}">
+            g.rows.forEach(r => {
+                const isEditing = editing && editing.row === r.row && editing.kind === 'identity';
+                const communityCell = isEditing
+                    ? `<td><input type="text" class="email-edit-input" data-email-community="${r.row}" value="${escapeHtml(editing.community)}" style="width:100%;box-sizing:border-box"></td>`
+                    : `<td>${escapeHtml(r.community)}${ov[r.row] ? ' <span class="override-tag">已修改</span>' : ''}</td>`;
+                const nameCell = isEditing
+                    ? `<td><input type="text" class="email-edit-input" data-email-name="${r.row}" value="${escapeHtml(editing.name)}" style="width:100%;box-sizing:border-box"></td>`
+                    : `<td>${escapeHtml(r.name)}${ov[r.row] ? ' <span class="override-tag">已修改</span>' : ''}</td>`;
+                html += `<tr>
                     <td>${escapeHtml(r.row)}</td>
-                    <td>${escapeHtml(r.community)}</td>
-                    <td>${escapeHtml(r.name)}</td>
-                    <td>${escapeHtml(r.raw)}${isOverridden ? ' <span class="override-tag">已修改</span>' : ''}</td>`;
-                if (r.editing) {
-                    html += `<td><input type="text" class="email-edit-input" data-group="${gi}" data-row="${ri}" value="${escapeHtml(r.editValue)}"></td>
-                        <td>
-                            <button class="btn small primary" data-save-edit="${gi}" data-row="${ri}">保存</button>
-                            <button class="btn small text" data-cancel-edit="${gi}" data-row="${ri}">取消</button>
-                        </td>`;
-                } else {
-                    html += `<td>${escapeHtml(r.current)}</td>
-                        <td>
-                            ${r.confirmed ? '<span class="confirmed-tag">已确认</span>' : `<button class="btn small" data-confirm-row="${gi}" data-row="${ri}">确认</button>`}
-                            <button class="btn small text" data-edit-row="${gi}" data-row="${ri}">修改</button>
-                        </td>`;
-                }
-                html += `</tr>`;
+                    ${communityCell}
+                    ${nameCell}
+                    <td>${escapeHtml(r.current)}</td>
+                    <td>${emailOpsHtml(r.row, { canConfirm: false, editKind: 'identity' })}</td>
+                </tr>`;
             });
             html += `</tbody></table></div>`;
         });
         html += `</div>`;
     }
 
-    // 其他问题
+    if (vs.duplicateGroups.length) {
+        const pendingDup = vs.duplicateGroups.reduce((s, g) => s + g.rows.filter(r => !emailRowConfirmed(r.row)).length, 0);
+        html += `<div class="duplicate-section"><h4>重复邮箱（请确认是否为正常共用邮箱，或修改）${pendingDup > 0 ? ' <button class="btn small" data-email-confirm-all="dup">全部确认</button>' : ''}</h4>`;
+        vs.duplicateGroups.forEach(g => {
+            const allConfirmed = g.rows.every(r => emailRowConfirmed(r.row));
+            html += `<div class="duplicate-group ${allConfirmed ? 'confirmed' : ''}">
+                <div class="group-header">
+                    <span class="group-email">${escapeHtml(g.email)}</span>
+                    <span class="group-count">共 ${g.rows.length} 人</span>
+                    ${allConfirmed ? '<span class="group-status">已确认</span>' : `<button class="btn small" data-email-confirm-group="${g.rows[0].row}">全部确认</button>`}
+                </div>
+                <table>
+                    <thead><tr><th>行号</th><th>社区</th><th>姓名</th><th>原始邮箱</th><th>当前邮箱</th><th>操作</th></tr></thead>
+                    <tbody>`;
+            g.rows.forEach(r => {
+                html += `<tr class="${emailRowConfirmed(r.row) ? 'confirmed-row' : ''}">
+                    <td>${escapeHtml(r.row)}</td>
+                    <td>${escapeHtml(r.community)}</td>
+                    <td>${escapeHtml(r.name)}</td>
+                    <td>${escapeHtml(r.raw)}${ov[r.row] ? ' <span class="override-tag">已修改</span>' : ''}</td>
+                    ${emailCellHtml(r.row, r.current)}
+                    <td>${emailOpsHtml(r.row, { canConfirm: true, editKind: 'email' })}</td>
+                </tr>`;
+            });
+            html += `</tbody></table></div>`;
+        });
+        html += `</div>`;
+    }
+
     if (vs.issues.length) {
-        html += `<div class="issues-section"><h4>其他邮箱问题</h4>
-            <table><thead><tr><th>行号</th><th>社区</th><th>姓名</th><th>原始邮箱</th><th>清洗后</th><th>问题</th></tr></thead><tbody>`;
-        vs.issues.forEach(issue => {
-            html += `<tr>
-                <td>${escapeHtml(issue.row)}</td>
-                <td>${escapeHtml(issue.community)}</td>
-                <td>${escapeHtml(issue.name)}</td>
-                <td>${escapeHtml(issue.raw)}</td>
-                <td>${escapeHtml(issue.cleaned)}</td>
-                <td>${escapeHtml(issue.errors.join('；'))}</td>
+        const pendingIssues = vs.issues.filter(r => !emailRowConfirmed(r.row)).length;
+        html += `<div class="issues-section"><h4>其他邮箱问题${pendingIssues > 0 ? ' <button class="btn small" data-email-confirm-all="issues">全部确认</button>' : ''}</h4>
+            <p class="hint-text">可修改为正确邮箱；或确认保留该邮箱继续导入；或删除该条邮箱记录，对应人员在合并时会变成「未匹配」。</p>
+            <table style="table-layout:fixed"><colgroup><col style="width:60px"><col style="width:80px"><col style="width:80px"><col style="width:150px"><col style="width:180px"><col style="width:120px"><col style="width:160px"></colgroup>
+                <thead><tr><th>行号</th><th>社区</th><th>姓名</th><th>原始邮箱</th><th>当前邮箱</th><th>问题</th><th>操作</th></tr></thead>
+                <tbody>`;
+        vs.issues.forEach(r => {
+            html += `<tr class="${emailRowConfirmed(r.row) ? 'confirmed-row' : ''}">
+                <td>${escapeHtml(r.row)}</td>
+                <td>${escapeHtml(r.community)}</td>
+                <td>${escapeHtml(r.name)}</td>
+                <td>${escapeHtml(r.raw)}${ov[r.row] ? ' <span class="override-tag">已修改</span>' : ''}</td>
+                ${emailCellHtml(r.row, r.current)}
+                <td>${escapeHtml(r.errors.join('；'))}</td>
+                <td>${emailOpsHtml(r.row, { canConfirm: true, editKind: 'email' })}</td>
+            </tr>`;
+        });
+        html += `</tbody></table></div>`;
+    }
+
+    if (vs.deletedRecords && vs.deletedRecords.length) {
+        html += `<div class="issues-section"><h4>已删除的邮箱记录</h4>
+            <table style="table-layout:fixed"><colgroup><col style="width:60px"><col style="width:80px"><col style="width:80px"><col style="width:150px"><col style="width:160px"></colgroup><thead><tr><th>行号</th><th>社区</th><th>姓名</th><th>原始邮箱</th><th>操作</th></tr></thead><tbody>`;
+        vs.deletedRecords.forEach(r => {
+            html += `<tr class="deleted-row">
+                <td>${escapeHtml(r.row)}</td>
+                <td>${escapeHtml(r.community)}</td>
+                <td>${escapeHtml(r.name)}</td>
+                <td>${escapeHtml(r.raw)}</td>
+                <td><button class="btn small text" data-email-restore="${r.row}">撤销删除</button></td>
             </tr>`;
         });
         html += `</tbody></table></div>`;
@@ -1843,43 +2005,61 @@ function renderValidation() {
 
     html += renderOverrideLog();
 
-    if (!vs.duplicateGroups.length && !vs.issues.length && !Object.keys(state.email.overrideLog || {}).length) {
-        html += `<p>所有邮箱均校验通过。</p>`;
-    }
+    const clean = !vs.duplicateGroups.length && !vs.issues.length && !vs.duplicateNameGroups.length
+        && !(vs.deletedRecords || []).length && !Object.keys(state.email.overrideLog || {}).length;
+    if (clean) html += `<p>所有邮箱均校验通过。</p>`;
 
     el.innerHTML = html;
 
     const emailHelpBtn = $('#email-validation-help');
     if (emailHelpBtn) emailHelpBtn.addEventListener('click', showValidationHelp);
 
-    // Bind events
-    el.querySelectorAll('[data-confirm-row]').forEach(btn => {
-        btn.addEventListener('click', () => confirmDuplicateRow(parseInt(btn.dataset.confirmRow), parseInt(btn.dataset.row)));
+    el.querySelectorAll('[data-email-confirm]').forEach(btn => {
+        btn.addEventListener('click', () => confirmEmailRows([parseInt(btn.dataset.emailConfirm)]));
     });
-    el.querySelectorAll('[data-confirm-group]').forEach(btn => {
-        btn.addEventListener('click', () => confirmDuplicateGroup(parseInt(btn.dataset.confirmGroup)));
+    el.querySelectorAll('[data-email-confirm-group]').forEach(btn => {
+        const group = vs.duplicateGroups.find(g => g.rows.some(r => r.row === parseInt(btn.dataset.emailConfirmGroup)));
+        btn.addEventListener('click', () => group && confirmEmailRows(group.rows.map(r => r.row)));
     });
-    el.querySelectorAll('[data-edit-row]').forEach(btn => {
-        btn.addEventListener('click', () => editDuplicateRow(parseInt(btn.dataset.editRow), parseInt(btn.dataset.row)));
+    el.querySelectorAll('[data-email-confirm-all]').forEach(btn => {
+        btn.addEventListener('click', () => {
+            if (btn.dataset.emailConfirmAll === 'issues') confirmAllIssues();
+            else confirmAllDuplicates();
+        });
     });
-    el.querySelectorAll('[data-save-edit]').forEach(btn => {
-        btn.addEventListener('click', () => saveDuplicateEdit(parseInt(btn.dataset.saveEdit), parseInt(btn.dataset.row)));
+    el.querySelectorAll('[data-email-edit]').forEach(btn => {
+        const [row, kind] = btn.dataset.emailEdit.split('|');
+        btn.addEventListener('click', () => startEmailEdit(parseInt(row), kind));
     });
-    el.querySelectorAll('[data-cancel-edit]').forEach(btn => {
-        btn.addEventListener('click', () => cancelDuplicateEdit(parseInt(btn.dataset.cancelEdit), parseInt(btn.dataset.row)));
+    el.querySelectorAll('[data-email-save]').forEach(btn => {
+        btn.addEventListener('click', () => saveEmailEdit(parseInt(btn.dataset.emailSave)));
     });
-    el.querySelectorAll('.email-edit-input').forEach(input => {
+    el.querySelectorAll('[data-email-cancel]').forEach(btn => {
+        btn.addEventListener('click', () => cancelEmailEdit());
+    });
+    el.querySelectorAll('[data-email-delete]').forEach(btn => {
+        btn.addEventListener('click', () => deleteEmailRow(parseInt(btn.dataset.emailDelete)));
+    });
+    el.querySelectorAll('[data-email-restore]').forEach(btn => {
+        btn.addEventListener('click', () => restoreEmailRow(parseInt(btn.dataset.emailRestore)));
+    });
+    el.querySelectorAll('[data-email-value]').forEach(input => {
         input.addEventListener('input', () => {
-            const vs = state.email.validationState;
-            const groupIdx = parseInt(input.dataset.group);
-            const rowIdx = parseInt(input.dataset.row);
-            if (vs && vs.duplicateGroups[groupIdx]) {
-                vs.duplicateGroups[groupIdx].rows[rowIdx].editValue = input.value;
-            }
+            if (state.email.editing) state.email.editing.value = input.value;
         });
         input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') saveDuplicateEdit(parseInt(input.dataset.group), parseInt(input.dataset.row));
-            if (e.key === 'Escape') cancelDuplicateEdit(parseInt(input.dataset.group), parseInt(input.dataset.row));
+            if (e.key === 'Enter') saveEmailEdit(parseInt(input.dataset.emailValue));
+            if (e.key === 'Escape') cancelEmailEdit();
+        });
+    });
+    el.querySelectorAll('[data-email-community]').forEach(input => {
+        input.addEventListener('input', () => {
+            if (state.email.editing) state.email.editing.community = input.value;
+        });
+    });
+    el.querySelectorAll('[data-email-name]').forEach(input => {
+        input.addEventListener('input', () => {
+            if (state.email.editing) state.email.editing.name = input.value;
         });
     });
 }
@@ -1911,11 +2091,11 @@ function buildSummary() {
         : escapeHtml(state.email.filename);
     const salaryDeleted = (state.salary.deletedRows || []).length;
     const salaryActual = Math.max(0, s.record_count - salaryDeleted);
-    const emailDeleted = 0; // 邮箱表暂无删除功能
+    const emailDeleted = (state.email.deletedRows || []).length;
     const emailActual = Math.max(0, e.record_count - emailDeleted);
     $('#import-summary').innerHTML = `
         <p>工资表：<strong>${salaryFileLink}</strong>，源文件 <strong>${s.record_count}</strong> 条${salaryDeleted > 0 ? `，删除 <strong class="text-danger">${salaryDeleted}</strong> 条，实际导入 <strong>${salaryActual}</strong> 条` : ''}</p>
-        <p>邮箱表：<strong>${emailFileLink}</strong>，源文件 <strong>${e.record_count}</strong> 条${emailDeleted > 0 ? `，实际 <strong>${emailActual}</strong> 条` : ''}</p>
+        <p>邮箱表：<strong>${emailFileLink}</strong>，源文件 <strong>${e.record_count}</strong> 条${emailDeleted > 0 ? `，删除 <strong class="text-danger">${emailDeleted}</strong> 条，实际导入 <strong>${emailActual}</strong> 条` : ''}</p>
         <p>合并键：<strong>社区 + 姓名</strong>（以工资表为准进行合并）</p>
         <div id="summary-empty-email"></div>
     `;
@@ -1965,6 +2145,7 @@ function buildImportConfig() {
             skip_rows: parseHeaderRows($('#email-skip-rows').value),
             mapping: emailMapping,
             overrides: state.email.overrides,
+            deleted_rows: state.email.deletedRows,
         },
     };
 }
@@ -2228,13 +2409,28 @@ async function loadMonths() {
     });
 }
 
+async function loadCommunities() {
+    const res = await fetch('/api/communities').then(r => r.json());
+    const select = $('#search-community');
+    select.innerHTML = '<option value="">全部社区</option>';
+    res.forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c;
+        opt.textContent = c;
+        select.appendChild(opt);
+    });
+}
+
 let searchSuggestTimer = null;
 
-function buildSearchUrl(base, q, monthVal) {
+function buildSearchUrl(base, q, monthVal, communityVal) {
     let url = `${base}?q=${encodeURIComponent(q)}`;
     if (monthVal && monthVal !== 'all') {
         const [year, month] = monthVal.split('-');
         url += `&year=${year}&month=${month}`;
+    }
+    if (communityVal) {
+        url += `&community=${encodeURIComponent(communityVal)}`;
     }
     return url;
 }
@@ -2321,7 +2517,8 @@ $('#search-month').addEventListener('change', () => {
 $('#search-btn').addEventListener('click', async () => {
     const q = $('#search-input').value.trim();
     const monthVal = $('#search-month').value;
-    const res = await fetch(buildSearchUrl('/api/search', q, monthVal)).then(r => r.json());
+    const communityVal = $('#search-community').value;
+    const res = await fetch(buildSearchUrl('/api/search', q, monthVal, communityVal)).then(r => r.json());
     renderSearchResults(res);
 });
 

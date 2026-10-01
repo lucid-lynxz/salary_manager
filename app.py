@@ -152,6 +152,23 @@ def validate_email(raw_email, seen_emails=None):
     return email, "valid", []
 
 
+def apply_email_row_override(record, overrides):
+    """取邮箱表某一行的有效值：用户在前端按行号覆盖的社区/姓名/邮箱优先于原始值。
+
+    按行号而非「社区|姓名」寻址，因为重名人员的键会互相覆盖。
+    """
+    ov = overrides.get(str(record.get("_row_index"))) or {}
+
+    def pick(key, fallback):
+        value = ov.get(key)
+        return fallback if value is None else str(value)
+
+    community = pick("community", record.get("community", "")).strip()
+    name = pick("name", record.get("name", "")).strip()
+    raw_email = pick("email", record.get("email", ""))
+    return community, name, raw_email
+
+
 def save_upload(file_storage):
     ext = Path(file_storage.filename).suffix.lower()
     file_id = f"{uuid.uuid4().hex}{ext}"
@@ -868,9 +885,11 @@ def api_parse_config():
                 "invalid": duplicate_count + len(issues),
                 "duplicate_count": duplicate_count,
                 "other_issue_count": len(issues),
-                "issues": issues[:50],
+                "issues": issues,
                 "duplicate_groups": duplicate_groups,
                 "duplicate_name_groups": duplicate_name_groups,
+                # 全量清洗行：前端据此在本地重算校验结果，用户改完无需重新上传
+                "all_rows": cleaned_records,
             }
 
         if file_type == "salary":
@@ -919,14 +938,16 @@ def api_import_preview():
                                          skip_rows=email_cfg.get("skip_rows", []), is_email=True)
 
         overrides = email_cfg.get("overrides") or {}
+        email_deleted_rows = set(email_cfg.get("deleted_rows") or [])
         email_map = {}
         for r in email_records:
-            key = (r.get("community", "").strip(), r.get("name", "").strip())
-            if not key[0] or not key[1]:
+            if r.get("_row_index") in email_deleted_rows:
                 continue
-            raw_email = overrides.get(f"{key[0]}|{key[1]}", r.get("email", ""))
-            email, _, errs = validate_email(raw_email, set())
-            email_map[key] = email
+            community, name, raw_email = apply_email_row_override(r, overrides)
+            if not community or not name:
+                continue
+            email, _, _ = validate_email(raw_email, set())
+            email_map[(community, name)] = email
 
         # 解析工资表
         sdf = read_excel_raw(salary_path, salary_cfg["sheet_name"])
@@ -1024,16 +1045,19 @@ def api_import():
 
         # 应用用户在前端修正的邮箱覆盖
         overrides = email_cfg.get("overrides") or {}
+        email_deleted_rows = set(email_cfg.get("deleted_rows") or [])
 
         # 校验并构建 (community, name) -> email info
         seen_emails = set()
         email_map = {}
         email_issues = []
         for r in email_records:
-            key = (r.get("community", ""), r.get("name", ""))
+            if r.get("_row_index") in email_deleted_rows:
+                continue
+            community, name, raw_email = apply_email_row_override(r, overrides)
+            key = (community, name)
             if not key[0] or not key[1]:
                 continue
-            raw_email = overrides.get(f"{key[0]}|{key[1]}", r.get("email", ""))
             email, status, errs = validate_email(raw_email, seen_emails)
             seen_emails.add(email)
             email_map[key] = {
@@ -1045,7 +1069,7 @@ def api_import():
                 email_issues.append({
                     "community": key[0],
                     "name": key[1],
-                    "raw": r.get("email", ""),
+                    "raw": raw_email,
                     "cleaned": email,
                     "errors": errs,
                 })
@@ -1181,6 +1205,16 @@ def get_latest_month(conn):
     return (row["year"], row["month"]) if row else (None, None)
 
 
+@app.route("/api/communities", methods=["GET"])
+def api_communities():
+    """获取所有社区的列表（去重、排序）。"""
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT community FROM persons WHERE community IS NOT NULL AND community != '' ORDER BY community"
+        ).fetchall()
+    return jsonify([r["community"] for r in rows])
+
+
 @app.route("/api/search-suggest", methods=["GET"])
 def api_search_suggest():
     """按姓名模糊匹配，返回下拉建议列表（含岗位等摘要信息）。未传月份时取最新月份。"""
@@ -1233,6 +1267,7 @@ def api_search():
     q = request.args.get("q", "").strip()
     year = request.args.get("year", type=int)
     month = request.args.get("month", type=int)
+    community = request.args.get("community", "").strip()
 
     with get_db() as conn:
         # 空姓名搜索默认取最新月份；有姓名但未指定月份时返回所有月份
@@ -1243,44 +1278,50 @@ def api_search():
 
         if q:
             if year and month:
-                rows = conn.execute(
-                    """
+                sql = """
                     SELECT p.id, p.community, p.name, p.email, p.email_status, p.email_issues,
                            s.year, s.month, sr.gross_salary, sr.total_deduction, sr.net_salary, sr.bank_account, sr.data_json
                     FROM persons p
                     JOIN salary_imports s ON p.import_id = s.id
                     JOIN salary_records sr ON sr.person_id = p.id AND sr.import_id = s.id
                     WHERE p.name LIKE ? AND s.year = ? AND s.month = ?
-                    ORDER BY p.community, p.name
-                    """,
-                    (f"%{q}%", year, month)
-                ).fetchall()
+                """
+                params = [f"%{q}%", year, month]
+                if community:
+                    sql += " AND p.community = ?"
+                    params.append(community)
+                sql += " ORDER BY p.community, p.name"
+                rows = conn.execute(sql, params).fetchall()
             else:
-                rows = conn.execute(
-                    """
+                sql = """
                     SELECT p.id, p.community, p.name, p.email, p.email_status, p.email_issues,
                            s.year, s.month, sr.gross_salary, sr.total_deduction, sr.net_salary, sr.bank_account, sr.data_json
                     FROM persons p
                     JOIN salary_imports s ON p.import_id = s.id
                     JOIN salary_records sr ON sr.person_id = p.id AND sr.import_id = s.id
                     WHERE p.name LIKE ?
-                    ORDER BY s.year DESC, s.month DESC, p.community, p.name
-                    """,
-                    (f"%{q}%",)
-                ).fetchall()
-        else:
-            rows = conn.execute(
                 """
+                params = [f"%{q}%"]
+                if community:
+                    sql += " AND p.community = ?"
+                    params.append(community)
+                sql += " ORDER BY s.year DESC, s.month DESC, p.community, p.name"
+                rows = conn.execute(sql, params).fetchall()
+        else:
+            sql = """
                 SELECT p.id, p.community, p.name, p.email, p.email_status, p.email_issues,
                        s.year, s.month, sr.gross_salary, sr.total_deduction, sr.net_salary, sr.bank_account, sr.data_json
                 FROM persons p
                 JOIN salary_imports s ON p.import_id = s.id
                 JOIN salary_records sr ON sr.person_id = p.id AND sr.import_id = s.id
                 WHERE s.year = ? AND s.month = ?
-                ORDER BY p.community, p.name
-                """,
-                (year, month)
-            ).fetchall()
+            """
+            params = [year, month]
+            if community:
+                sql += " AND p.community = ?"
+                params.append(community)
+            sql += " ORDER BY p.community, p.name"
+            rows = conn.execute(sql, params).fetchall()
 
     results = []
     seen = set()
@@ -1311,7 +1352,16 @@ def api_search():
 
 @app.route("/api/person/<int:person_id>", methods=["GET"])
 def api_person(person_id):
-    # 列出该人员的所有历史导入记录（按年月倒序），不再按单月过滤
+    # 先获取该人员的基本信息
+    with get_db() as conn:
+        base = conn.execute(
+            "SELECT id, community, name, email, email_status, email_issues FROM persons WHERE id = ?",
+            (person_id,)
+        ).fetchone()
+    if not base:
+        return jsonify({"error": "未找到"}), 404
+    
+    # 按"社区+姓名"查询所有历史导入记录（不同月份的同名人员会有不同 person_id）
     with get_db() as conn:
         rows = conn.execute(
             """
@@ -1320,23 +1370,27 @@ def api_person(person_id):
             FROM persons p
             JOIN salary_imports s ON p.import_id = s.id
             LEFT JOIN salary_records sr ON sr.person_id = p.id AND sr.import_id = s.id
-            WHERE p.id = ?
+            WHERE p.community = ? AND p.name = ?
             ORDER BY s.year DESC, s.month DESC, s.id DESC
             """,
-            (person_id,)
+            (base["community"], base["name"])
         ).fetchall()
     if not rows:
         return jsonify({"error": "未找到"}), 404
-    # 列顺序以最新一次导入的 detail keys 为准
+    # 收集所有出现过的列名，按首次出现的顺序排列
     detail_keys = []
+    seen_keys = set()
     history = []
     for r in rows:
         detail = json.loads(r["data_json"] or "{}")
         # 旧版导入可能只有 persons 没有 salary_records，用 persons 字段兜底
         if not detail:
             detail = {"社区": r["community"], "姓名": r["name"]}
-        if not detail_keys:
-            detail_keys = list(detail.keys())
+        # 收集所有列名
+        for k in detail:
+            if k not in seen_keys:
+                seen_keys.add(k)
+                detail_keys.append(k)
         history.append({
             "year": r["year"],
             "month": r["month"],
@@ -1397,13 +1451,14 @@ def api_import_records(import_id):
         ).fetchall()
     records = []
     detail_keys = []
+    all_detail_keys = set()
     for r in rows:
         detail = json.loads(r["data_json"] or "{}")
         # 旧版导入可能只有 persons 没有 salary_records，用 persons 字段兜底
         if not detail:
             detail = {"社区": r["community"], "姓名": r["name"]}
-        if not detail_keys:
-            detail_keys = list(detail.keys())
+        # 收集所有出现过的列名
+        all_detail_keys.update(detail.keys())
         records.append({
             "community": r["community"],
             "name": r["name"],
@@ -1416,6 +1471,13 @@ def api_import_records(import_id):
             "bank_account": r["bank_account"],
             "detail": detail,
         })
+    # 按首次出现的顺序排列列名
+    seen = set()
+    for rec in records:
+        for k in rec["detail"]:
+            if k not in seen:
+                seen.add(k)
+                detail_keys.append(k)
     return jsonify({
         "id": imp["id"],
         "year": imp["year"],
@@ -1516,26 +1578,19 @@ def api_open_project_dir():
 
 @app.route("/api/package-project", methods=["POST"])
 def api_package_project():
-    """将项目目录打包为 zip，支持仅代码 / 带数据库文件 / 带运行环境三种模式。"""
+    """将项目目录打包为 zip，支持仅代码 / 带数据库文件两种模式。"""
     data = request.get_json() or {}
-    # 兼容旧版 include_db 参数，新版优先使用 mode
-    mode = data.get("mode")
-    if not mode and data.get("include_db"):
-        mode = "with_db"
-    mode = mode or "code"
+    mode = data.get("mode") or "code"
 
-    include_db = mode in ("with_db", "with_runtime")
-    include_runtime = mode == "with_runtime"
+    include_db = mode == "with_db"
 
     packages_dir = BASE_DIR / "packages"
     packages_dir.mkdir(exist_ok=True)
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    suffix = {"with_db": "_with_db", "with_runtime": "_with_runtime"}.get(mode, "")
+    suffix = "_with_db" if include_db else ""
     zip_path = packages_dir / f"salary_manager_{timestamp}{suffix}.zip"
 
-    exclude_dirs = {"__pycache__", "logs", ".git", "packages", ".idea", ".aicoding-chat-workspace", "uploads"}
-    if not include_runtime:
-        exclude_dirs.add("venv")
+    exclude_dirs = {"__pycache__", "logs", ".git", "packages", ".idea", ".aicoding-chat-workspace", "uploads", "venv", ".venv", "assets"}
     exclude_files = {".DS_Store", "Thumbs.db", ".app.pid"}
     if include_db:
         exclude_suffixes = (".db-wal", ".db-shm", ".log")
@@ -1564,7 +1619,15 @@ def api_package_project():
                     continue
                 zf.write(path, path.relative_to(BASE_DIR))
 
-        _open_dir(packages_dir)
+        # Windows 下 explorer 命令可能返回非零退出码（即使成功打开），改用 start_new_session + ignore_errors
+        system = platform.system()
+        if system == "Windows":
+            subprocess.Popen(["explorer", str(packages_dir)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        elif system == "Darwin":
+            subprocess.run(["open", str(packages_dir)], check=False)
+        else:
+            subprocess.run(["xdg-open", str(packages_dir)], check=False)
+
         return jsonify({"zip": str(zip_path), "opened": str(packages_dir), "mode": mode})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
