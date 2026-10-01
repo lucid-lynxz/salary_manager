@@ -358,6 +358,53 @@ tr.omitted-row td.omitted-cell {
 .file-link:hover {
     text-decoration: underline;
 }
+/* 校验状态图标：灰色圆点=未解析, 绿色圆+对勾=通过, 红色圆+×=异常 */
+.status-icon {
+    display: inline-block;
+    width: 18px;
+    height: 18px;
+    margin-left: 8px;
+    vertical-align: middle;
+    border-radius: 50%;
+    background: #ccc;
+    position: relative;
+    flex-shrink: 0;
+}
+.status-icon.ok {
+    background: #28a745;
+}
+.status-icon.ok::after {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 3px;
+    width: 4px;
+    height: 8px;
+    border-right: 2px solid #fff;
+    border-bottom: 2px solid #fff;
+    transform: rotate(45deg);
+}
+.status-icon.error {
+    background: #dc3545;
+    animation: pulse 1.2s ease-in-out infinite;
+}
+.status-icon.error::before,
+.status-icon.error::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 8px;
+    height: 2px;
+    background: #fff;
+    border-radius: 1px;
+}
+.status-icon.error::before { transform: translate(-50%, -50%) rotate(45deg); }
+.status-icon.error::after  { transform: translate(-50%, -50%) rotate(-45deg); }
+@keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.5); }
+    50% { box-shadow: 0 0 0 6px rgba(220, 53, 69, 0); }
+}
 .duplicate-group {
     margin-bottom: 12px;
     padding: 12px;

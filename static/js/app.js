@@ -539,10 +539,14 @@ $('#wizard-steps').addEventListener('click', (e) => {
     // 顶部步骤按钮也需遵守校验：步骤2需工资表校验通过，步骤3需邮箱表校验通过
     if (n === 2 && $('#to-step2').disabled) {
         alert('请先处理工资表中的异常项后再进入下一步');
+        const validationEl = $('#salary-validation');
+        if (validationEl) validationEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
         return;
     }
     if (n === 3 && $('#to-step3').disabled) {
         alert('请先处理邮箱表中的异常项后再进入下一步');
+        const emailValidationEl = $('#email-validation');
+        if (emailValidationEl) emailValidationEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
         return;
     }
     goStep(n);
@@ -890,7 +894,20 @@ function updateSalaryNextButton() {
     const mathPending = vs.mathMismatchIssues.some(r => !r.confirmed && !r.editing);
     const emptyPending = vs.accountEmptyIssues.some(r => !r.confirmed && !r.editing);
     const nameDup = (vs.duplicateNameGroups || []).length > 0;
-    $('#to-step2').disabled = dupPending || changedPending || mathPending || emptyPending || nameDup;
+    const hasError = dupPending || changedPending || mathPending || emptyPending || nameDup;
+    $('#to-step2').disabled = hasError;
+    // 更新状态图标
+    const icon = $('#salary-status-icon');
+    if (icon) {
+        icon.classList.remove('ok', 'error');
+        if (hasError) {
+            icon.classList.add('error');
+            icon.title = '检测到异常，请查看下方校验结果';
+        } else {
+            icon.classList.add('ok');
+            icon.title = '所有数据校验通过';
+        }
+    }
     updateStepClickable();
 }
 
@@ -1639,7 +1656,20 @@ function updateStep3Button() {
     const hasPendingDuplicates = vs.duplicateGroups.some(g => g.rows.some(r => !r.confirmed && !r.editing));
     const hasIssues = vs.issues.length > 0;
     const nameDup = (vs.duplicateNameGroups || []).length > 0;
-    $('#to-step3').disabled = hasPendingDuplicates || hasIssues || nameDup;
+    const hasError = hasPendingDuplicates || hasIssues || nameDup;
+    $('#to-step3').disabled = hasError;
+    // 更新状态图标
+    const icon = $('#email-status-icon');
+    if (icon) {
+        icon.classList.remove('ok', 'error');
+        if (hasError) {
+            icon.classList.add('error');
+            icon.title = '检测到异常，请查看下方校验结果';
+        } else {
+            icon.classList.add('ok');
+            icon.title = '所有数据校验通过';
+        }
+    }
     updateStepClickable();
 }
 
