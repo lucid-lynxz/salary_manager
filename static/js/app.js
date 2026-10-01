@@ -1747,8 +1747,9 @@ function buildSummary() {
         show($('#date-warning'));
     }
     $('#import-summary').innerHTML = `
-        <p>工资表：<strong>${escapeHtml(state.salary.filename)}</strong>，共 ${s.record_count} 条记录</p>
+        <p>工资表：<strong>${escapeHtml(state.salary.filename)}</strong>，共 <strong>${s.record_count}</strong> 条记录</p>
         <p>邮箱表：<strong>${escapeHtml(state.email.filename)}</strong>，共 ${e.record_count} 条记录</p>
+        <div id="summary-empty-email"></div>
         <p>合并键：<strong>社区 + 姓名</strong></p>
     `;
 }
@@ -1818,6 +1819,15 @@ async function loadImportPreview() {
         $('#import-preview-unmatched-btn').classList.remove('active');
         $('#import-preview-stats').textContent =
             `共 ${res.total} 条，已匹配邮箱 ${res.matched} 条，未匹配 ${res.unmatched} 条`;
+        // 更新顶部摘要：邮箱空白数（>0 时显示）
+        const emptyEmailEl = $('#summary-empty-email');
+        if (emptyEmailEl) {
+            if (res.unmatched > 0) {
+                emptyEmailEl.innerHTML = `<p>邮箱空白：<strong class="text-danger">${res.unmatched}</strong> 条</p>`;
+            } else {
+                emptyEmailEl.innerHTML = '';
+            }
+        }
         renderImportPreview();
     } catch (err) {
         console.error(err);

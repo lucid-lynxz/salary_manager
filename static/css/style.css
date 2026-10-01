@@ -349,6 +349,7 @@ tr.omitted-row td.omitted-cell {
 .duplicate-name-warning strong { color: #8a6d3b; font-size: 14px; }
 .duplicate-name-warning p { margin: 6px 0; color: #8a6d3b; font-size: 13px; }
 .duplicate-name-warning ul { margin: 6px 0 0; padding-left: 20px; color: #8a6d3b; font-size: 13px; }
+.text-danger { color: var(--danger); }
 .duplicate-group {
     margin-bottom: 12px;
     padding: 12px;
