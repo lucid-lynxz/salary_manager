@@ -1915,7 +1915,7 @@ function buildSummary() {
     const emailActual = Math.max(0, e.record_count - emailDeleted);
     $('#import-summary').innerHTML = `
         <p>工资表：<strong>${salaryFileLink}</strong>，源文件 <strong>${s.record_count}</strong> 条${salaryDeleted > 0 ? `，删除 <strong class="text-danger">${salaryDeleted}</strong> 条，实际导入 <strong>${salaryActual}</strong> 条` : ''}</p>
-        <p>邮箱表：<strong>${emailFileLink}</strong>，源文件 ${e.record_count} 条${emailDeleted > 0 ? `，实际 ${emailActual} 条` : ''}</p>
+        <p>邮箱表：<strong>${emailFileLink}</strong>，源文件 <strong>${e.record_count}</strong> 条${emailDeleted > 0 ? `，实际 <strong>${emailActual}</strong> 条` : ''}</p>
         <p>合并键：<strong>社区 + 姓名</strong>（以工资表为准进行合并）</p>
         <div id="summary-empty-email"></div>
     `;
