@@ -347,9 +347,43 @@ function renderSalaryPreview() {
     const skipRows = parseHeaderRows($('#salary-skip-rows').value);
     const filtered = filterPreviewBySkipRows(state.salary.preview, state.salary.previewRowIndices, skipRows);
     const sliced = slicePreviewByEndCol(filtered.rows, $('#salary-data-end-col').value, filtered.rowIndices);
+
+    // 应用删除行和字段覆盖（community/name/account/gross/deduction/net）
+    const mapping = state.salary.mapping || {};
+    const deleted = new Set(state.salary.deletedRows);
+    const ov = state.salary.overrides || {};
+    const headerRows = parseHeaderRows($('#salary-header-rows').value);
+    const headerRowSet = new Set(headerRows);
+    const colMap = {
+        community: mapping.community,
+        name: mapping.name,
+        account_clean: parseInt($('#salary-bank-account-col').value),
+        gross: parseInt($('#salary-gross-col').value),
+        deduction: parseInt($('#salary-deduction-col').value),
+        net: parseInt($('#salary-net-col').value),
+    };
+    const finalRows = [];
+    const finalRowIndices = [];
+    for (let i = 0; i < sliced.rows.length; i++) {
+        const excelRow = sliced.rowIndices[i];
+        // 表头行不过滤，数据行若被删除则跳过
+        if (!headerRowSet.has(excelRow) && deleted.has(excelRow)) continue;
+        const row = sliced.rows[i].slice();
+        if (ov[excelRow]) {
+            for (const [key, colIdx] of Object.entries(colMap)) {
+                if (colIdx == null || isNaN(colIdx)) continue;
+                if (ov[excelRow][key] !== undefined) {
+                    if (colIdx < row.length) row[colIdx] = ov[excelRow][key];
+                }
+            }
+        }
+        finalRows.push(row);
+        finalRowIndices.push(excelRow);
+    }
+
     const pagination = state.salary.fullPreview ? { page: state.salary.previewPage, pageSize: state.salary.previewPageSize } : null;
-    const freezeCols = getFreezeCols(state.salary.mapping);
-    const pageInfo = renderTable($('#salary-preview-table'), sliced.rows, 1, parseHeaderRows($('#salary-header-rows').value), sliced.rowIndices, pagination, freezeCols);
+    const freezeCols = getFreezeCols(mapping);
+    const pageInfo = renderTable($('#salary-preview-table'), finalRows, 1, parseHeaderRows($('#salary-header-rows').value), finalRowIndices, pagination, freezeCols);
     renderPreviewPagination('salary', pageInfo);
 }
 
@@ -918,6 +952,7 @@ function saveSalaryEdit(groupType, groupIdx, rowIdx) {
     ov[row.row] = ovForRow;
     rebuildSalaryValidationState();
     renderSalaryValidation();
+    renderSalaryPreview();
     updateSalaryNextButton();
 }
 
@@ -1270,6 +1305,7 @@ function renderSalaryValidation() {
             if (row.editFields.name !== undefined) state.salary.overrides[excelRow].name = row.editFields.name;
             rebuildSalaryValidationState();
             renderSalaryValidation();
+            renderSalaryPreview();
             updateSalaryNextButton();
         });
     });
@@ -1278,6 +1314,7 @@ function renderSalaryValidation() {
             const [gi, ri] = btn.dataset.nameCancel.split('|').map(Number);
             state.salary.validationState.duplicateNameGroups[gi].rows[ri].editing = false;
             renderSalaryValidation();
+            renderSalaryPreview();
         });
     });
     el.querySelectorAll('[data-name-delete]').forEach(btn => {
@@ -1288,6 +1325,7 @@ function renderSalaryValidation() {
             state.salary.deletedRows.push(row.row);
             rebuildSalaryValidationState();
             renderSalaryValidation();
+            renderSalaryPreview();
             updateSalaryNextButton();
         });
     });
