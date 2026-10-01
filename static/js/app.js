@@ -733,7 +733,7 @@ async function parseSalary() {
         let resultHtml = `
             <p>解析到 <strong>${res.record_count}</strong> 条记录`;
         if (res.validation) {
-            resultHtml += `，其中有效工资记录 <strong>${res.validation.total_valid}</strong> 条`;
+            resultHtml += `，其中有效工资记录 <strong id="salary-valid-count">${res.validation.total_valid}</strong> 条`;
             if (res.validation.skipped_empty > 0) {
                 resultHtml += `，跳过 ${res.validation.skipped_empty} 条社区/姓名为空的行`;
             }
@@ -1031,6 +1031,10 @@ function renderSalaryValidation() {
     const vs = state.salary.validationState;
     if (!vs) { hide(el); return; }
     show(el);
+
+    // 同步更新顶部摘要里的"有效工资记录"数字，与下方统计保持一致
+    const validCountEl = $('#salary-valid-count');
+    if (validCountEl) validCountEl.textContent = vs.totalValid;
 
     const pendingDup = vs.duplicateAccountGroups.reduce((s, g) => s + g.rows.filter(r => !r.confirmed && !r.editing).length, 0);
     const pendingChanged = vs.accountChangedGroups.filter(r => !r.confirmed && !r.editing).length;
