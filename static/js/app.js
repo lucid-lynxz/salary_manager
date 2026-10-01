@@ -1804,11 +1804,17 @@ function buildSummary() {
     } else {
         show($('#date-warning'));
     }
+    const salaryFileLink = state.salary.fileId
+        ? `<a href="/api/download/${state.salary.fileId}?filename=${encodeURIComponent(state.salary.filename)}" target="_blank" class="file-link">${escapeHtml(state.salary.filename)}</a>`
+        : escapeHtml(state.salary.filename);
+    const emailFileLink = state.email.fileId
+        ? `<a href="/api/download/${state.email.fileId}?filename=${encodeURIComponent(state.email.filename)}" target="_blank" class="file-link">${escapeHtml(state.email.filename)}</a>`
+        : escapeHtml(state.email.filename);
     $('#import-summary').innerHTML = `
-        <p>工资表：<strong>${escapeHtml(state.salary.filename)}</strong>，共 <strong>${s.record_count}</strong> 条记录</p>
-        <p>邮箱表：<strong>${escapeHtml(state.email.filename)}</strong>，共 ${e.record_count} 条记录</p>
+        <p>工资表：<strong>${salaryFileLink}</strong>，共 <strong>${s.record_count}</strong> 条记录</p>
+        <p>邮箱表：<strong>${emailFileLink}</strong>，共 ${e.record_count} 条记录</p>
+        <p>合并键：<strong>社区 + 姓名</strong>（以工资表为准进行合并）</p>
         <div id="summary-empty-email"></div>
-        <p>合并键：<strong>社区 + 姓名</strong></p>
     `;
 }
 

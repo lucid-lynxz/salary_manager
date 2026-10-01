@@ -12,7 +12,7 @@ from functools import wraps
 
 import pandas as pd
 from dateutil import parser as date_parser
-from flask import Flask, request, jsonify, render_template, send_from_directory
+from flask import Flask, request, jsonify, render_template, send_from_directory, send_file
 
 app = Flask(__name__)
 
@@ -641,6 +641,16 @@ def build_preview_rows(df, detected_header, head_data=5, tail_data=5, threshold=
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/api/download/<file_id>")
+def api_download(file_id):
+    """下载已上传的文件，用于在确认导入页打开原始 Excel。"""
+    path = UPLOAD_DIR / file_id
+    if not path.exists():
+        return jsonify({"error": "文件不存在"}), 404
+    filename = request.args.get("filename", path.name)
+    return send_file(str(path), as_attachment=True, download_name=filename)
 
 
 @app.route("/api/preview", methods=["POST"])

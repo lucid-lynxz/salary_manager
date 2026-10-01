@@ -350,6 +350,14 @@ tr.omitted-row td.omitted-cell {
 .duplicate-name-warning p { margin: 6px 0; color: #8a6d3b; font-size: 13px; }
 .duplicate-name-warning ul { margin: 6px 0 0; padding-left: 20px; color: #8a6d3b; font-size: 13px; }
 .text-danger { color: var(--danger); }
+.file-link {
+    color: var(--primary);
+    text-decoration: none;
+    border-bottom: 1px dashed var(--primary);
+}
+.file-link:hover {
+    text-decoration: underline;
+}
 .duplicate-group {
     margin-bottom: 12px;
     padding: 12px;
