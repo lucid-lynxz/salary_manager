@@ -1847,9 +1847,13 @@ function buildSummary() {
     const emailFileLink = state.email.fileId
         ? `<a href="/api/download/${state.email.fileId}?filename=${encodeURIComponent(state.email.filename)}" target="_blank" class="file-link">${escapeHtml(state.email.filename)}</a>`
         : escapeHtml(state.email.filename);
+    const salaryDeleted = (state.salary.deletedRows || []).length;
+    const salaryActual = Math.max(0, s.record_count - salaryDeleted);
+    const emailDeleted = 0; // 邮箱表暂无删除功能
+    const emailActual = Math.max(0, e.record_count - emailDeleted);
     $('#import-summary').innerHTML = `
-        <p>工资表：<strong>${salaryFileLink}</strong>，共 <strong>${s.record_count}</strong> 条记录</p>
-        <p>邮箱表：<strong>${emailFileLink}</strong>，共 ${e.record_count} 条记录</p>
+        <p>工资表：<strong>${salaryFileLink}</strong>，源文件 <strong>${s.record_count}</strong> 条${salaryDeleted > 0 ? `，删除 <strong class="text-danger">${salaryDeleted}</strong> 条，实际导入 <strong>${salaryActual}</strong> 条` : ''}</p>
+        <p>邮箱表：<strong>${emailFileLink}</strong>，源文件 ${e.record_count} 条${emailDeleted > 0 ? `，实际 ${emailActual} 条` : ''}</p>
         <p>合并键：<strong>社区 + 姓名</strong>（以工资表为准进行合并）</p>
         <div id="summary-empty-email"></div>
     `;
@@ -1921,16 +1925,17 @@ async function loadImportPreview() {
         state.importPreview.unmatched = res.unmatched;
         state.importPreview.onlyUnmatched = false;
         $('#import-preview-unmatched-btn').classList.remove('active');
-        $('#import-preview-stats').textContent =
-            `共 ${res.total} 条，已匹配邮箱 ${res.matched} 条，未匹配 ${res.unmatched} 条`;
-        // 更新顶部摘要：邮箱空白数（>0 时显示）
+        const statsText = `共 ${res.total} 条（实际导入），已匹配邮箱 ${res.matched} 条，未匹配 ${res.unmatched} 条`;
+        $('#import-preview-stats').textContent = statsText;
+        // 更新顶部摘要：邮箱空白 + 实际匹配数
         const emptyEmailEl = $('#summary-empty-email');
         if (emptyEmailEl) {
+            let summaryExtra = '';
             if (res.unmatched > 0) {
-                emptyEmailEl.innerHTML = `<p>邮箱空白：<strong class="text-danger">${res.unmatched}</strong> 条</p>`;
-            } else {
-                emptyEmailEl.innerHTML = '';
+                summaryExtra += `<p>邮箱空白：<strong class="text-danger">${res.unmatched}</strong> 条（可手动填写或从历史邮箱中选择）</p>`;
             }
+            summaryExtra += `<p class="hint-text">实际将导入 ${res.total} 条工资记录，其中 ${res.matched} 条已匹配邮箱</p>`;
+            emptyEmailEl.innerHTML = summaryExtra;
         }
         renderImportPreview();
     } catch (err) {
@@ -1975,7 +1980,7 @@ function renderImportPreview() {
     const pageInfo = renderTable($('#import-preview-table'), allRows, 1, [1], allIndices, pagination, freezeCols);
     renderPreviewPagination('import', pageInfo);
 
-    // 邮箱列编辑：仅对空邮箱行可编辑
+    // 邮箱列编辑：仅对空邮箱行可编辑，并附带历史邮箱选择
     const table = $('#import-preview-table');
     table.querySelectorAll('tbody tr').forEach(tr => {
         const cells = tr.querySelectorAll('td');
@@ -1983,10 +1988,16 @@ function renderImportPreview() {
         const excelRow = parseInt(tr.querySelector('.row-header')?.textContent);
         if (isNaN(excelRow)) return;
         const emailCell = cells[emailIdx];
-        const originalEmail = state.importPreview.rows[state.importPreview.rowIndices.indexOf(excelRow)]?.[emailIdx] ?? '';
+        const origIdx = state.importPreview.rowIndices.indexOf(excelRow);
+        const originalEmail = state.importPreview.rows[origIdx]?.[emailIdx] ?? '';
         const curEmail = emailOverrides[excelRow] !== undefined ? emailOverrides[excelRow] : originalEmail;
         if (!originalEmail) {
-            emailCell.innerHTML = `<input class="email-edit-input" type="email" data-email-edit="${excelRow}" value="${escapeHtml(curEmail)}" placeholder="输入邮箱..." style="width:200px">`;
+            const communityVal = origIdx >= 0 ? (state.importPreview.rows[origIdx]?.[communityIdx] ?? '') : '';
+            const nameVal = origIdx >= 0 ? (state.importPreview.rows[origIdx]?.[nameIdx] ?? '') : '';
+            emailCell.innerHTML = `<div class="email-edit-cell">
+                <input class="email-edit-input" type="email" data-email-edit="${excelRow}" value="${escapeHtml(curEmail)}" placeholder="输入邮箱..." style="width:180px">
+                <button class="btn small history-email-btn" data-history-community="${escapeHtml(communityVal)}" data-history-name="${escapeHtml(nameVal)}" title="从历史邮箱选择">历史</button>
+            </div>`;
         }
     });
     table.querySelectorAll('[data-email-edit]').forEach(input => {
@@ -1995,6 +2006,50 @@ function renderImportPreview() {
             state.importPreview.emailOverrides[excelRow] = input.value.trim();
             // 更新统计
             updateImportPreviewStats();
+        });
+    });
+    // 历史邮箱按钮
+    table.querySelectorAll('.history-email-btn').forEach(btn => {
+        btn.addEventListener('click', async () => {
+            const community = btn.dataset.historyCommunity;
+            const name = btn.dataset.historyName;
+            if (!community || !name) return;
+            btn.disabled = true;
+            btn.textContent = '...';
+            try {
+                const res = await fetch(`/api/history-emails?community=${encodeURIComponent(community)}&name=${encodeURIComponent(name)}`);
+                const data = await res.json();
+                if (!data.emails || data.emails.length === 0) {
+                    alert(`未找到「${community} - ${name}」的历史邮箱`);
+                    return;
+                }
+                // 显示下拉列表
+                const dropdown = document.createElement('div');
+                dropdown.className = 'history-email-dropdown';
+                dropdown.innerHTML = data.emails.map(e => `<div class="history-email-item" data-email="${escapeHtml(e)}">${escapeHtml(e)}</div>`).join('');
+                const cell = btn.parentElement;
+                // 移除已有的下拉
+                cell.querySelector('.history-email-dropdown')?.remove();
+                cell.appendChild(dropdown);
+                dropdown.querySelectorAll('.history-email-item').forEach(item => {
+                    item.addEventListener('click', () => {
+                        const email = item.dataset.email;
+                        const input = cell.querySelector('.email-edit-input');
+                        if (input) {
+                            input.value = email;
+                            const excelRow = parseInt(input.dataset.emailEdit);
+                            state.importPreview.emailOverrides[excelRow] = email;
+                            updateImportPreviewStats();
+                        }
+                        dropdown.remove();
+                    });
+                });
+            } catch (e) {
+                alert('查询历史邮箱失败：' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '历史';
+            }
         });
     });
 }

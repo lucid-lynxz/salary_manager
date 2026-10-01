@@ -653,6 +653,25 @@ def api_download(file_id):
     return send_file(str(path), as_attachment=True, download_name=filename)
 
 
+@app.route("/api/history-emails")
+def api_history_emails():
+    """根据社区+姓名查询历史邮箱列表。"""
+    community = (request.args.get("community") or "").strip()
+    name = (request.args.get("name") or "").strip()
+    if not community or not name:
+        return jsonify({"emails": []})
+    with get_db() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT e.email FROM emails e "
+            "JOIN persons p ON e.person_id = p.id "
+            "WHERE p.community = ? AND p.name = ? AND e.email != '' "
+            "ORDER BY e.id DESC",
+            (community, name)
+        ).fetchall()
+    emails = [r[0] for r in rows]
+    return jsonify({"emails": emails})
+
+
 @app.route("/api/preview", methods=["POST"])
 def api_preview():
     if "file" not in request.files:
