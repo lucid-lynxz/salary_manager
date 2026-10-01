@@ -981,9 +981,10 @@ def api_import():
                 if email_info["status"] == "missing":
                     stats["unmatched"] += 1
                     unmatched.append({"community": community, "name": name})
-                    continue
-                stats["matched"] += 1
+                else:
+                    stats["matched"] += 1
 
+                # 无论是否匹配到邮箱，都写入人员和工资记录；未匹配的邮箱留空
                 cur = conn.execute(
                     "INSERT OR REPLACE INTO persons (import_id, community, name, email, email_status, email_issues) "
                     "VALUES (?, ?, ?, ?, ?, ?)",

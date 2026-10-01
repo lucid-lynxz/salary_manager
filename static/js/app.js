@@ -1740,6 +1740,11 @@ $('#import-preview-unmatched-btn').addEventListener('click', () => {
 });
 
 $('#do-import').addEventListener('click', async () => {
+    // 存在未匹配记录时，二次确认
+    if (state.importPreview.unmatched && state.importPreview.unmatched > 0) {
+        const msg = `检测到 ${state.importPreview.unmatched} 条工资记录未匹配到邮箱。\n\n点击「确定」将导入全部工资数据，未匹配人员的邮箱留空；点击「取消」放弃导入。`;
+        if (!confirm(msg)) return;
+    }
     const cfg = buildImportConfig();
     const body = {
         year: parseInt($('#salary-year').value),
