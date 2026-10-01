@@ -819,6 +819,11 @@ function rebuildSalaryValidationState(validation) {
     vs.accountChangedGroups = accountChanged;
     vs.accountEmptyIssues = accountEmpty;
     vs.duplicateNameGroups = nameDupGroups;
+
+    // 有效数 = 非删除且无社区+姓名重复的行数
+    const duplicateNameRowCount = nameDupGroups.reduce((s, g) => s + g.rows.length, 0);
+    vs.totalValid = allRows.length - duplicateNameRowCount;
+    vs.deletedCount = state.salary.deletedRows.length;
 }
 
 function updateSalaryNextButton() {
@@ -1004,6 +1009,8 @@ function renderSalaryValidation() {
 
     html += `<div class="stats">
         <div class="stat valid">有效：${vs.totalValid}</div>
+        ${vs.deletedCount > 0 ? `<div class="stat">已删除：${vs.deletedCount}</div>` : ''}
+        ${(vs.duplicateNameGroups || []).length > 0 ? `<div class="stat invalid">社区+姓名重复：${vs.duplicateNameGroups.reduce((s,g)=>s+g.rows.length,0)}</div>` : ''}
         ${vs.skippedEmpty > 0 ? `<div class="stat">跳过空行：${vs.skippedEmpty}</div>` : ''}
     `;
     if (!vs.hasAccountField) {
