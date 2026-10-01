@@ -746,8 +746,17 @@ async function parseSalary() {
         const hasBlocking = vs && (
             (vs.duplicateAccountGroups && vs.duplicateAccountGroups.length > 0) ||
             (vs.accountChangedGroups && vs.accountChangedGroups.length > 0) ||
-            (vs.mathMismatchIssues && vs.mathMismatchIssues.length > 0)
+            (vs.mathMismatchIssues && vs.mathMismatchIssues.length > 0) ||
+            (vs.accountEmptyIssues && vs.accountEmptyIssues.length > 0) ||
+            (vs.duplicateNameGroups && vs.duplicateNameGroups.length > 0)
         );
+        // 有异常时自动滚动到下方校验区域
+        if (hasBlocking) {
+            setTimeout(() => {
+                const validationEl = $('#salary-validation');
+                if (validationEl) validationEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }, 100);
+        }
         updateSalaryNextButton();
         unlockStep(2);
         renderSalaryPreview();
