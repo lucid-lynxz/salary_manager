@@ -2441,9 +2441,11 @@ async function showImportDetail(importId) {
         if (r.error) { body.innerHTML = `<p style="color:var(--danger)">${escapeHtml(r.error)}</p>`; return; }
 
         const records = r.records || [];
-        // 收集 detail 中所有列名（保持首次出现顺序）
-        const detailCols = [];
-        const seen = new Set();
+        // 用后端返回的 detail_keys（工资表原始列顺序）代替从 detail 收集，
+        // 避免 jsonify 的 sort_keys 打乱 dict key 顺序
+        const detailCols = r.detail_keys || [];
+        const seen = new Set(detailCols);
+        // 补充 detail_keys 中缺失但某条记录有的列（兼容旧数据）
         records.forEach(rec => {
             Object.keys(rec.detail || {}).forEach(k => {
                 if (!seen.has(k)) { seen.add(k); detailCols.push(k); }

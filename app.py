@@ -1392,8 +1392,11 @@ def api_import_records(import_id):
             (import_id,),
         ).fetchall()
     records = []
+    detail_keys = []
     for r in rows:
         detail = json.loads(r["data_json"] or "{}")
+        if not detail_keys:
+            detail_keys = list(detail.keys())
         records.append({
             "community": r["community"],
             "name": r["name"],
@@ -1414,6 +1417,7 @@ def api_import_records(import_id):
         "email_filename": imp["email_filename"],
         "imported_at": imp["imported_at"],
         "records": records,
+        "detail_keys": detail_keys,
     })
 
 
