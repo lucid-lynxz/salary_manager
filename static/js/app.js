@@ -2337,12 +2337,12 @@ function renderSearchResults(results) {
             <tr>
                 <th>社区</th>
                 <th>姓名</th>
-                <th>邮箱</th>
                 <th>年月</th>
                 <th>应发工资</th>
                 <th>代扣合计</th>
                 <th>实发工资</th>
                 <th>银行账号</th>
+                <th>邮箱</th>
                 <th>操作</th>
             </tr>
         </thead>
@@ -2351,12 +2351,12 @@ function renderSearchResults(results) {
         html += `<tr>
             <td>${escapeHtml(r.community)}</td>
             <td>${escapeHtml(r.name)}</td>
-            <td>${escapeHtml(r.email || '-')}</td>
             <td>${r.year}年${r.month}月</td>
             <td>${fmtMoney(r.gross_salary)}</td>
             <td>${fmtMoney(r.total_deduction)}</td>
             <td>${fmtMoney(r.net_salary)}</td>
             <td>${escapeHtml(r.bank_account || '-')}</td>
+            <td>${escapeHtml(r.email || '-')}</td>
             <td><button class="btn small secondary" data-id="${r.id}" data-year="${r.year}" data-month="${r.month}">查看明细</button></td>
         </tr>`;
     });
@@ -2438,10 +2438,10 @@ async function showPersonDetail(id, year, month) {
         const h = r.history[0];
         html += `<h3>${h.year}年${h.month}月导入详情</h3>`;
         html += `<table class="detail-table"><tbody>`;
-        html += `<tr><th>邮箱</th><td>${escapeHtml(r.email || '-')}</td></tr>`;
         Object.entries(h.detail).forEach(([key, value]) => {
             html += `<tr><th>${escapeHtml(key)}</th><td>${escapeHtml(value == null ? '' : String(value))}</td></tr>`;
         });
+        html += `<tr><th>邮箱</th><td>${escapeHtml(r.email || '-')}</td></tr>`;
         html += `</tbody></table>`;
     }
     body.innerHTML = html;
