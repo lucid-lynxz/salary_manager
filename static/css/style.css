@@ -598,6 +598,7 @@ tr.omitted-row td.omitted-cell {
 .import-detail-modal .modal-content {
     max-width: 95vw;
     width: 95vw;
+    overflow: hidden;
 }
 .import-detail-wrap {
     overflow: auto;
