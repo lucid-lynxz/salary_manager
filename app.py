@@ -1385,7 +1385,7 @@ def api_import_records(import_id):
             SELECT p.community, p.name, p.email, p.email_status, p.email_issues,
                    sr.gross_salary, sr.total_deduction, sr.net_salary, sr.bank_account, sr.data_json
             FROM persons p
-            JOIN salary_records sr ON sr.person_id = p.id AND sr.import_id = p.import_id
+            LEFT JOIN salary_records sr ON sr.person_id = p.id AND sr.import_id = p.import_id
             WHERE p.import_id = ?
             ORDER BY p.id
             """,
@@ -1395,6 +1395,9 @@ def api_import_records(import_id):
     detail_keys = []
     for r in rows:
         detail = json.loads(r["data_json"] or "{}")
+        # 旧版导入可能只有 persons 没有 salary_records，用 persons 字段兜底
+        if not detail:
+            detail = {"社区": r["community"], "姓名": r["name"]}
         if not detail_keys:
             detail_keys = list(detail.keys())
         records.append({
