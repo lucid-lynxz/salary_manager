@@ -67,7 +67,7 @@ def random_email(name, idx):
     return f"{pinyin}{idx}@{domain}"
 
 
-def generate_salary(year, month, count, output_path):
+def generate_salary(year, month, people, output_path):
     wb = Workbook()
     ws = wb.active
     ws.title = "工资表"
@@ -86,11 +86,9 @@ def generate_salary(year, month, count, output_path):
     for col, val in enumerate(headers, start=1):
         ws.cell(row=4, column=col, value=val)
 
-    # 第 5 行起：数据
-    for i in range(1, count + 1):
+    # 第 5 行起：数据（使用与邮箱表相同的人员清单，保证社区+姓名一一对应）
+    for i, (idx, community, name, _email) in enumerate(people, start=1):
         row = 4 + i
-        community = random.choice(COMMUNITIES)
-        name = random_name()
         position = random.choice(POSITIONS)
         base = random.randint(3000, 8000)
         allowance = random.randint(500, 2000)
@@ -104,7 +102,7 @@ def generate_salary(year, month, count, output_path):
         net = round(gross - deduction, 2)
         bank = random_bank_account()
 
-        values = [i, community, name, position, base, allowance, performance,
+        values = [idx, community, name, position, base, allowance, performance,
                   gross, pension, medical, unemployment, housing,
                   deduction, net, bank]
         for col, val in enumerate(values, start=1):
@@ -116,7 +114,7 @@ def generate_salary(year, month, count, output_path):
         ws.column_dimensions[ws.cell(row=4, column=idx).column_letter].width = w
 
     wb.save(output_path)
-    print(f"生成工资表（{count} 人）：{output_path}")
+    print(f"生成工资表（{len(people)} 人）：{output_path}")
 
 
 def generate_email(year, month, people, output_path):
@@ -165,7 +163,7 @@ def main():
     salary_path = os.path.join(ASSETS_DIR, f"工资表_{suffix}")
     email_path = os.path.join(ASSETS_DIR, f"邮箱表_{suffix}")
 
-    generate_salary(year, month, count, salary_path)
+    generate_salary(year, month, people, salary_path)
     generate_email(year, month, people, email_path)
     print(f"\n测试数据生成完成（{count} 人，{year}年{month}月）。")
     print(f"工资表：{salary_path}")
