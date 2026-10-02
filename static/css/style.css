@@ -1102,6 +1102,8 @@ html[data-theme="dark"] .btn.toggle { background: #334155; color: var(--text); }
 html[data-theme="dark"] .btn.toggle:hover { background: #475569; }
 html[data-theme="dark"] .btn.toggle.active { background: var(--primary); color: #fff; box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5); }
 html[data-theme="dark"] .btn.toggle.active:hover { background: var(--primary-dark); }
+html[data-theme="dark"] input[type="month"] { background: #1e293b; color: var(--text); border-color: #475569; }
+html[data-theme="dark"] input[type="month"]:focus { border-color: var(--primary); outline: none; }
 html[data-theme="dark"] .file-upload-row input[type="file"] { background: #1e293b; color: var(--text); border-color: #475569; }
 html[data-theme="dark"] .parse-result { background: #1e3a5f; color: var(--text); }
 html[data-theme="dark"] .parse-result strong { color: #93c5fd; }
@@ -1130,6 +1132,21 @@ html[data-theme="dark"] .issues-section table td { background: #1e293b; color: v
 html[data-theme="dark"] .group-email { background: #334155; color: var(--text); }
 html[data-theme="dark"] .summary-box { background: #1e293b; color: var(--text); }
 html[data-theme="dark"] .result-box.error { background: #450a0a; color: var(--danger); }
+html[data-theme="dark"] .flatpickr-calendar { background: #1e293b; border-color: #334155; box-shadow: 0 4px 20px rgba(0,0,0,0.5); }
+html[data-theme="dark"] .flatpickr-day { color: var(--text); }
+html[data-theme="dark"] .flatpickr-day.selected { background: var(--primary); border-color: var(--primary); }
+html[data-theme="dark"] .flatpickr-day:hover { background: #334155; }
+html[data-theme="dark"] .flatpickr-months .flatpickr-month { background: #1e293b; color: var(--text); }
+html[data-theme="dark"] .flatpickr-months .flatpickr-prev-month svg,
+html[data-theme="dark"] .flatpickr-months .flatpickr-next-month svg { fill: var(--text); }
+#salary-year-month.flatpickr-input[readonly],
+input.flatpickr-alt-input { width: 100% !important; box-sizing: border-box; text-align: center; }
+#salary-year-month { text-align: center; }
+html[data-theme="dark"] .flatpickr-current-month input.cur-year { color: var(--text); }
+html[data-theme="dark"] .flatpickr-weekdays { background: #1e293b; }
+html[data-theme="dark"] .flatpickr-weekday { color: var(--muted); }
+html[data-theme="dark"] .flatpickr-day.inRange { background: #334155; border-color: #334155; }
+html[data-theme="dark"] .flatpickr-day.today { border-color: var(--primary); }
 html[data-theme="dark"] .issues-section .confirmed-row td { background: #14321f; }
 html[data-theme="dark"] .issues-section .deleted-row td { background: #1e293b; color: var(--muted); }
 html[data-theme="dark"] .issues-section .btn.text.danger:hover { background: #450a0a; }

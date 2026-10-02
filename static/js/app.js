@@ -2073,14 +2073,12 @@ function buildSummary() {
     const year = state.detectedYear ?? salaryDetected.detected_year ?? null;
     const month = state.detectedMonth ?? salaryDetected.detected_month ?? null;
     if (year !== null && month !== null) {
-        $('#salary-year').value = year;
-        $('#salary-month').value = month;
+        $('#salary-year-month').value = `${year}-${String(month).padStart(2, '0')}`;
         hide($('#date-warning'));
     } else {
         // 未解析到年月，默认填充今年/本月
         const now = new Date();
-        $('#salary-year').value = now.getFullYear();
-        $('#salary-month').value = now.getMonth() + 1;
+        $('#salary-year-month').value = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
         show($('#date-warning'));
     }
     const salaryFileLink = state.salary.fileId
@@ -2339,16 +2337,16 @@ $('#import-preview-unmatched-btn').addEventListener('click', () => {
 
 $('#do-import').addEventListener('click', async () => {
     // 校验年份月份
-    const yearVal = $('#salary-year').value;
-    const monthVal = $('#salary-month').value;
-    const year = parseInt(yearVal);
-    const month = parseInt(monthVal);
-    if (!/^[12]\d{3}$/.test(yearVal) || isNaN(year)) {
-        alert('年份请输入4位数字，且首位为1或2');
+    const ymVal = $('#salary-year-month').value;
+    if (!ymVal) {
+        alert('请选择年月');
         return;
     }
-    if (isNaN(month) || month < 1 || month > 12) {
-        alert('月份只能是 1-12');
+    const [yearStr, monthStr] = ymVal.split('-');
+    const year = parseInt(yearStr);
+    const month = parseInt(monthStr);
+    if (isNaN(year) || isNaN(month) || month < 1 || month > 12) {
+        alert('年月格式无效');
         return;
     }
     // 存在未匹配记录时，二次确认
@@ -2993,31 +2991,7 @@ function confirmModal(message) {
 
 // 年份/月份输入限制：年份4位且首位1或2，月份1-12
 (function() {
-    const yearInput = $('#salary-year');
-    const monthInput = $('#salary-month');
-    if (yearInput) {
-        yearInput.addEventListener('input', () => {
-            // 只保留数字，首位必须是1或2，最多4位
-            let v = yearInput.value.replace(/[^\d]/g, '');
-            if (v && !/[12]/.test(v[0])) v = '';
-            if (v.length > 4) v = v.slice(0, 4);
-            if (yearInput.value !== v) yearInput.value = v;
-        });
-    }
-    if (monthInput) {
-        monthInput.addEventListener('input', () => {
-            // 只保留数字，最多2位，且值在1-12
-            let v = monthInput.value.replace(/[^\d]/g, '');
-            if (v.length > 2) v = v.slice(0, 2);
-            if (v && parseInt(v) > 12) v = '12';
-            if (monthInput.value !== v) monthInput.value = v;
-        });
-        // 失焦时若是0或空，回退到1
-        monthInput.addEventListener('blur', () => {
-            const v = parseInt(monthInput.value);
-            if (!v || v < 1) monthInput.value = '1';
-        });
-    }
+    // type="month" 原生日历选择器，无需手动校验
 })();
 
 applySavedTheme();
