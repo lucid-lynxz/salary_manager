@@ -2166,8 +2166,14 @@ async function loadImportPreview() {
         state.importPreview.total = res.total;
         state.importPreview.matched = res.matched;
         state.importPreview.unmatched = res.unmatched;
-        state.importPreview.onlyUnmatched = false;
-        $('#import-preview-unmatched-btn').classList.remove('active');
+        // 存在未匹配记录时默认激活"仅看未匹配"
+        if (res.unmatched > 0) {
+            state.importPreview.onlyUnmatched = true;
+            $('#import-preview-unmatched-btn').classList.add('active');
+        } else {
+            state.importPreview.onlyUnmatched = false;
+            $('#import-preview-unmatched-btn').classList.remove('active');
+        }
         const statsText = `共 ${res.total} 条（实际导入），已匹配邮箱 ${res.matched} 条，未匹配 ${res.unmatched} 条`;
         $('#import-preview-stats').textContent = statsText;
         // 更新顶部摘要：邮箱空白 + 实际匹配数
