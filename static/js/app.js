@@ -2084,15 +2084,15 @@ function renderValidation() {
 
     html += renderOverrideLog();
 
-    const clean = !vs.duplicateGroups.length && !vs.issues.length && !vs.duplicateNameGroups.length
-        && !(vs.deletedRecords || []).length && !Object.keys(state.email.overrideLog || {}).length;
-    if (clean) {
+    // 检查是否有需要处理的异常（重复邮箱、格式错误、姓名重复）
+    const hasUnresolvedIssues = vs.duplicateGroups.length || vs.issues.length || vs.duplicateNameGroups.length;
+    const hasOverrides = Object.keys(state.email.overrides).length > 0;
+    const hasDeletedRows = state.email.deletedRows.length > 0;
+    
+    if (!hasUnresolvedIssues) {
         html += `<p>所有邮箱均校验通过 ✅</p>`;
 
-        // 检查是否有修改或删除操作，如果有则显示写回按钮
-        const hasOverrides = Object.keys(state.email.overrides).length > 0;
-        const hasDeletedRows = state.email.deletedRows.length > 0;
-
+        // 有修改或删除操作时显示写回按钮
         if (hasOverrides || hasDeletedRows) {
             html += `<div style="margin-top: 16px;">
                 <button id="write-back-email-btn" class="btn primary">保存修改到源文件</button>
