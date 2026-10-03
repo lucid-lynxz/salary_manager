@@ -1324,9 +1324,88 @@ function renderSalaryValidation() {
 
     if (vs.duplicateAccountGroups.length === 0 && vs.accountChangedGroups.length === 0 && vs.mathMismatchIssues.length === 0 && vs.accountEmptyIssues.length === 0 && (vs.duplicateNameGroups || []).length === 0) {
         html += `<p>所有数据均校验通过 ✅</p>`;
+        
+        // 检查是否有修改或删除操作，如果有则显示写回按钮
+        const hasOverrides = Object.keys(state.salary.overrides).length > 0;
+        const hasDeletedRows = state.salary.deletedRows.length > 0;
+        
+        console.log('写回按钮条件检查:', {
+            hasOverrides,
+            hasDeletedRows,
+            overridesCount: Object.keys(state.salary.overrides).length,
+            deletedRowsCount: state.salary.deletedRows.length
+        });
+        
+        if (hasOverrides || hasDeletedRows) {
+            html += `<div style="margin-top: 16px;">
+                <button id="write-back-btn" class="btn primary">保存修改到源文件</button>
+            </div>`;
+            console.log('✅ 写回按钮已渲染');
+        } else {
+            console.log('❌ 写回按钮未渲染（无修改或删除）');
+        }
     }
 
     el.innerHTML = html;
+    
+    // 绑定写回按钮事件
+    const writeBackBtn = $('#write-back-btn');
+    if (writeBackBtn) {
+        writeBackBtn.addEventListener('click', async () => {
+            console.log('点击写回按钮');
+            console.log('overrides:', state.salary.overrides);
+            console.log('deletedRows:', state.salary.deletedRows);
+            console.log('fileId:', state.salary.fileId);
+            console.log('sheetName:', $('#salary-sheet').value);
+            
+            const confirmed = await confirmModal(`此操作将直接修改源文件 "${state.salary.filename}"，是否继续？`);
+            if (!confirmed) {
+                console.log('用户取消');
+                return;
+            }
+            
+            try {
+                // 获取当前的配置
+                const salaryConfig = {
+                    header_rows: $('#salary-header-rows').value,
+                    data_start: $('#salary-data-start').value
+                };
+                
+                console.log('发送请求:', {
+                    file_id: state.salary.fileId,
+                    sheet_name: $('#salary-sheet').value,
+                    overrides: state.salary.overrides,
+                    deleted_rows: state.salary.deletedRows,
+                    salary_config: salaryConfig
+                });
+                
+                const res = await postJson('/api/write-back-salary', {
+                    file_id: state.salary.fileId,
+                    sheet_name: $('#salary-sheet').value,
+                    overrides: state.salary.overrides,
+                    deleted_rows: state.salary.deletedRows,
+                    salary_config: salaryConfig,
+                    original_filename: state.salary.filename  // 传递原始文件名
+                });
+                
+                console.log('响应:', res);
+                
+                if (res.error) {
+                    alert('写回失败: ' + res.error);
+                } else {
+                    await infoModal('已成功写回源文件');
+                    // 清除已应用的修改，避免重复写回
+                    state.salary.overrides = {};
+                    state.salary.deletedRows = [];
+                    // 重新渲染验证报告
+                    renderSalaryValidation();
+                }
+            } catch (err) {
+                console.error('写回异常:', err);
+                alert('写回失败: ' + err.message);
+            }
+        });
+    }
 
     el.querySelectorAll('[data-salary-edit]').forEach(btn => {
         btn.addEventListener('click', () => {
@@ -2985,6 +3064,43 @@ function confirmModal(message) {
         };
         document.addEventListener('keydown', keyHandler, true);
         // 打开后立即聚焦"确定"按钮，使其成为默认按钮
+        okBtn.focus();
+    });
+}
+
+// 自定义信息提示弹框（居中显示，替代原生 alert）
+function infoModal(message) {
+    return new Promise((resolve) => {
+        if (document.querySelector('.confirm-modal-overlay')) {
+            resolve(false);
+            return;
+        }
+        const overlay = document.createElement('div');
+        overlay.className = 'confirm-modal-overlay';
+        overlay.innerHTML = `<div class="confirm-modal-box">
+            <p class="confirm-modal-message">${escapeHtml(message)}</p>
+            <div class="confirm-modal-actions">
+                <button class="btn primary" data-confirm="ok">确定</button>
+            </div>
+        </div>`;
+        document.body.appendChild(overlay);
+        const okBtn = overlay.querySelector('[data-confirm="ok"]');
+        let settled = false;
+        const close = () => {
+            if (settled) return;
+            settled = true;
+            overlay.remove();
+            resolve(true);
+            document.removeEventListener('keydown', keyHandler, true);
+        };
+        okBtn.addEventListener('click', () => close());
+        overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+        const keyHandler = (e) => {
+            if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault(); e.stopPropagation(); close();
+            }
+        };
+        document.addEventListener('keydown', keyHandler, true);
         okBtn.focus();
     });
 }

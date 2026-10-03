@@ -1547,6 +1547,157 @@ def api_put_user_config():
     return jsonify(updated)
 
 
+@app.route("/api/write-back-salary", methods=["POST"])
+def api_write_back_salary():
+    """将修正后的工资数据写回源 Excel 文件（同时更新 uploads 副本和 assets 原始文件）。"""
+    import sys
+    print("=" * 60, file=sys.stderr, flush=True)
+    print(">>> WRITE-BACK API CALLED <<<", file=sys.stderr, flush=True)
+    print("=" * 60, file=sys.stderr, flush=True)
+    
+    try:
+        import openpyxl
+        import shutil
+        
+        data = request.get_json() or {}
+        file_id = data.get("file_id")
+        sheet_name = data.get("sheet_name")
+        overrides = data.get("overrides", {})
+        deleted_rows = data.get("deleted_rows", [])
+        salary_cfg = data.get("salary_config", {})
+        original_filename = data.get("original_filename")  # 原始文件名
+
+        if not file_id or not sheet_name:
+            return jsonify({"error": "缺少必要参数"}), 400
+
+        path = UPLOAD_DIR / file_id
+        if not path.exists():
+            return jsonify({"error": "源文件不存在"}), 404
+
+        print(f"[WRITE-BACK] Upload file: {path}", file=sys.stderr, flush=True)
+        print(f"[WRITE-BACK] Sheet: {sheet_name}", file=sys.stderr, flush=True)
+        print(f"[WRITE-BACK] Overrides: {len(overrides)}, Deleted: {len(deleted_rows)}", file=sys.stderr, flush=True)
+        if original_filename:
+            print(f"[WRITE-BACK] Original filename: {original_filename}", file=sys.stderr, flush=True)
+
+        # 读取原始 DataFrame
+        df = read_excel_raw(path, sheet_name)
+        print(f"[WRITE-BACK] Original rows: {len(df)}", file=sys.stderr, flush=True)
+        
+        # 读取配置
+        header_rows_str = salary_cfg.get("header_rows", "3,4")
+        data_start_str = salary_cfg.get("data_start", "5")
+        header_rows = [int(r) - 1 for r in header_rows_str.split(",") if r.strip()]
+        data_start_row = int(data_start_str) - 1
+        
+        # 应用删除
+        indices_to_delete = set()
+        for row_num in deleted_rows:
+            df_idx = row_num - 1
+            if data_start_row <= df_idx < len(df):  # 只允许删除数据行
+                indices_to_delete.add(df_idx)
+        
+        # 应用修改
+        modified_count = 0
+        for row_num_str, fields in overrides.items():
+            row_num = int(row_num_str)
+            df_idx = row_num - 1
+            if data_start_row <= df_idx < len(df) and df_idx not in indices_to_delete:  # 只允许修改数据行
+                headers = fill_merged_headers(df, header_rows)
+                for field_name, new_value in fields.items():
+                    for col_idx, col_name in enumerate(headers):
+                        if col_name == field_name:
+                            df.iat[df_idx, col_idx] = new_value
+                            modified_count += 1
+                            break
+        
+        print(f"[WRITE-BACK] Modified: {modified_count} fields", file=sys.stderr, flush=True)
+        
+        # 删除行
+        if indices_to_delete:
+            sorted_indices = sorted(indices_to_delete, reverse=True)
+            for idx in sorted_indices:
+                df = df.drop(index=df.index[idx])
+            df = df.reset_index(drop=True)
+            print(f"[WRITE-BACK] Deleted: {len(indices_to_delete)} rows, remaining total: {len(df)}", file=sys.stderr, flush=True)
+        
+        # 提取纯数据行（跳过行和表头行保持原样不动）
+        data_df = df.iloc[data_start_row:].reset_index(drop=True)
+        print(f"[WRITE-BACK] Data rows to write: {len(data_df)}", file=sys.stderr, flush=True)
+        
+        # 用 openpyxl 直接操作
+        print(f"[WRITE-BACK] Loading workbook...", file=sys.stderr, flush=True)
+        wb = openpyxl.load_workbook(path)
+        print(f"[WRITE-BACK] Sheets: {wb.sheetnames}", file=sys.stderr, flush=True)
+        
+        if sheet_name not in wb.sheetnames:
+            print(f"[WRITE-BACK] ERROR: Sheet '{sheet_name}' not found!", file=sys.stderr, flush=True)
+            return jsonify({"error": f"工作表 '{sheet_name}' 不存在"}), 404
+        
+        ws = wb[sheet_name]
+        
+        # 关键：只清空并重写数据行，保留跳过行和表头行不变
+        # data_start_row 是数据开始的行（0-based），Excel 行号 = data_start_row + 1
+        data_start_excel = data_start_row + 1
+        
+        # 找到原始数据的最后一行
+        max_row = ws.max_row
+        max_col = ws.max_column
+        
+        print(f"[WRITE-BACK] Clearing data rows {data_start_excel}-{max_row}, cols 1-{max_col}", file=sys.stderr, flush=True)
+        
+        # 只清空数据区域（从 data_start_excel 到最后）
+        for row_idx in range(data_start_excel, max_row + 1):
+            for col_idx in range(1, max_col + 1):
+                ws.cell(row=row_idx, column=col_idx).value = None
+        
+        # 写入数据（只写纯数据行，从 data_start_excel 开始）
+        print(f"[WRITE-BACK] Writing {len(data_df)} data rows starting at Excel row {data_start_excel}", file=sys.stderr, flush=True)
+        
+        for row_idx, (_, row_data) in enumerate(data_df.iterrows()):
+            excel_row = data_start_excel + row_idx
+            for col_idx, value in enumerate(row_data, 1):
+                ws.cell(row=excel_row, column=col_idx, value=value)
+        
+        # 保存 uploads 副本
+        print(f"[WRITE-BACK] Saving to uploads: {path}...", file=sys.stderr, flush=True)
+        import os
+        old_size = os.path.getsize(path)
+        print(f"[WRITE-BACK] Old size: {old_size} bytes", file=sys.stderr, flush=True)
+        
+        wb.save(path)
+        wb.close()
+        
+        new_size = os.path.getsize(path)
+        print(f"[WRITE-BACK] New size: {new_size} bytes", file=sys.stderr, flush=True)
+        
+        # 同时写回 assets 原始文件
+        if original_filename:
+            assets_dir = BASE_DIR / "assets"
+            original_path = assets_dir / original_filename
+            
+            if original_path.exists():
+                print(f"[WRITE-BACK] Also writing to original: {original_path}", file=sys.stderr, flush=True)
+                # 重新加载刚保存的 workbook（因为 wb 已关闭）
+                wb2 = openpyxl.load_workbook(path)
+                wb2.save(original_path)
+                wb2.close()
+                orig_size = os.path.getsize(original_path)
+                print(f"[WRITE-BACK] Original file size: {orig_size} bytes", file=sys.stderr, flush=True)
+            else:
+                print(f"[WRITE-BACK] WARNING: Original file not found at {original_path}", file=sys.stderr, flush=True)
+        
+        print(f"[WRITE-BACK] DONE!", file=sys.stderr, flush=True)
+        
+        return jsonify({"message": "已成功写回源文件"})
+    
+    except Exception as e:
+        import traceback
+        error_detail = traceback.format_exc()
+        print(f"[WRITE-BACK] ERROR: {error_detail}", file=sys.stderr, flush=True)
+        return jsonify({"error": f"写回失败: {str(e)}"}), 500
+
+
 if not USER_CONFIG_PATH.exists():
     save_user_config(json.loads(json.dumps(DEFAULT_USER_CONFIG)))
 
