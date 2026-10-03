@@ -1698,6 +1698,119 @@ def api_write_back_salary():
         return jsonify({"error": f"写回失败: {str(e)}"}), 500
 
 
+@app.route("/api/write-back-email", methods=["POST"])
+def api_write_back_email():
+    """将修正后的邮箱数据写回源 Excel 文件（同时更新 uploads 副本和 assets 原始文件）。"""
+    try:
+        import openpyxl
+        
+        data = request.get_json() or {}
+        file_id = data.get("file_id")
+        sheet_name = data.get("sheet_name")
+        overrides = data.get("overrides", {})
+        deleted_rows = data.get("deleted_rows", [])
+        email_cfg = data.get("email_config", {})
+        original_filename = data.get("original_filename")
+
+        if not file_id or not sheet_name:
+            return jsonify({"error": "缺少必要参数"}), 400
+
+        path = UPLOAD_DIR / file_id
+        if not path.exists():
+            return jsonify({"error": "源文件不存在"}), 404
+
+        # 读取原始 DataFrame
+        df = read_excel_raw(path, sheet_name)
+        
+        # 读取配置
+        header_rows_str = email_cfg.get("header_rows", "2")
+        skip_rows_str = email_cfg.get("skip_rows", "")
+        data_start_str = email_cfg.get("data_start", "3")
+        
+        header_rows = [int(r) - 1 for r in header_rows_str.split(",") if r.strip()]
+        skip_rows = [int(r) - 1 for r in skip_rows_str.split(",") if r.strip()] if skip_rows_str else []
+        data_start_row = int(data_start_str) - 1
+        
+        # 应用删除
+        indices_to_delete = set()
+        for row_num in deleted_rows:
+            df_idx = row_num - 1
+            if data_start_row <= df_idx < len(df):
+                indices_to_delete.add(df_idx)
+        
+        # 应用修改（邮箱表的overrides格式：{row_num: {community, name, email}}）
+        modified_count = 0
+        for row_num_str, fields in overrides.items():
+            row_num = int(row_num_str)
+            df_idx = row_num - 1
+            if data_start_row <= df_idx < len(df) and df_idx not in indices_to_delete:
+                headers = fill_merged_headers(df, header_rows)
+                for field_name, new_value in fields.items():
+                    for col_idx, col_name in enumerate(headers):
+                        if col_name == field_name:
+                            df.iat[df_idx, col_idx] = new_value
+                            modified_count += 1
+                            break
+        
+        # 删除行
+        if indices_to_delete:
+            sorted_indices = sorted(indices_to_delete, reverse=True)
+            for idx in sorted_indices:
+                df = df.drop(index=df.index[idx])
+            df = df.reset_index(drop=True)
+        
+        # 提取纯数据行（跳过行和表头行保持原样不动）
+        data_df = df.iloc[data_start_row:].reset_index(drop=True)
+        
+        # 用 openpyxl 直接操作
+        wb = openpyxl.load_workbook(path)
+        
+        if sheet_name not in wb.sheetnames:
+            return jsonify({"error": f"工作表 '{sheet_name}' 不存在"}), 404
+        
+        ws = wb[sheet_name]
+        
+        # 只清空并重写数据行，保留跳过行和表头行不变
+        data_start_excel = data_start_row + 1
+        
+        max_row = ws.max_row
+        max_col = ws.max_column
+        
+        # 只清空数据区域（从 data_start_excel 到最后）
+        for row_idx in range(data_start_excel, max_row + 1):
+            for col_idx in range(1, max_col + 1):
+                ws.cell(row=row_idx, column=col_idx).value = None
+        
+        # 写入数据（只写纯数据行，从 data_start_excel 开始）
+        for row_idx, (_, row_data) in enumerate(data_df.iterrows()):
+            excel_row = data_start_excel + row_idx
+            for col_idx, value in enumerate(row_data, 1):
+                ws.cell(row=excel_row, column=col_idx, value=value)
+        
+        # 保存 uploads 副本
+        import os
+        wb.save(path)
+        wb.close()
+        
+        # 同时写回 assets 原始文件
+        if original_filename:
+            assets_dir = BASE_DIR / "assets"
+            original_path = assets_dir / original_filename
+            
+            if original_path.exists():
+                wb2 = openpyxl.load_workbook(path)
+                wb2.save(original_path)
+                wb2.close()
+        
+        return jsonify({"message": "已成功写回源文件"})
+    
+    except Exception as e:
+        import traceback
+        error_detail = traceback.format_exc()
+        print(f"[WRITE-BACK-EMAIL] ERROR: {error_detail}", file=sys.stderr, flush=True)
+        return jsonify({"error": f"写回失败: {str(e)}"}), 500
+
+
 if not USER_CONFIG_PATH.exists():
     save_user_config(json.loads(json.dumps(DEFAULT_USER_CONFIG)))
 

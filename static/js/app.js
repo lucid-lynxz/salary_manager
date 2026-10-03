@@ -2086,9 +2086,61 @@ function renderValidation() {
 
     const clean = !vs.duplicateGroups.length && !vs.issues.length && !vs.duplicateNameGroups.length
         && !(vs.deletedRecords || []).length && !Object.keys(state.email.overrideLog || {}).length;
-    if (clean) html += `<p>所有邮箱均校验通过。</p>`;
+    if (clean) {
+        html += `<p>所有邮箱均校验通过 ✅</p>`;
+
+        // 检查是否有修改或删除操作，如果有则显示写回按钮
+        const hasOverrides = Object.keys(state.email.overrides).length > 0;
+        const hasDeletedRows = state.email.deletedRows.length > 0;
+
+        if (hasOverrides || hasDeletedRows) {
+            html += `<div style="margin-top: 16px;">
+                <button id="write-back-email-btn" class="btn primary">保存修改到源文件</button>
+            </div>`;
+        }
+    }
 
     el.innerHTML = html;
+
+    // 绑定邮箱写回按钮事件
+    const writeBackEmailBtn = $('#write-back-email-btn');
+    if (writeBackEmailBtn) {
+        writeBackEmailBtn.addEventListener('click', async () => {
+            const confirmed = await confirmModal(`此操作将直接修改源文件 "${state.email.filename}"，是否继续？`);
+            if (!confirmed) return;
+
+            try {
+                const emailConfig = {
+                    header_rows: $('#email-header-rows').value,
+                    data_start: $('#email-data-start').value,
+                    skip_rows: $('#email-skip-rows').value,
+                    data_end_col: $('#email-data-end-col').value.trim() || null,
+                };
+
+                const res = await postJson('/api/write-back-email', {
+                    file_id: state.email.fileId,
+                    sheet_name: $('#email-sheet').value,
+                    overrides: state.email.overrides,
+                    deleted_rows: state.email.deletedRows,
+                    email_config: emailConfig,
+                    original_filename: state.email.filename
+                });
+
+                if (res.error) {
+                    alert('写回失败: ' + res.error);
+                } else {
+                    await infoModal('已成功写回源文件');
+                    state.email.overrides = {};
+                    state.email.deletedRows = [];
+                    state.email.overrideLog = {};
+                    renderValidation();
+                }
+            } catch (err) {
+                console.error('写回异常:', err);
+                alert('写回失败: ' + err.message);
+            }
+        });
+    }
 
     const emailHelpBtn = $('#email-validation-help');
     if (emailHelpBtn) emailHelpBtn.addEventListener('click', showValidationHelp);
