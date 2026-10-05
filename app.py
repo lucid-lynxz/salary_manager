@@ -1820,16 +1820,29 @@ if not USER_CONFIG_PATH.exists():
 # ---------------------------------------------------------------------------
 
 def _open_dir(path: Path):
-    """使用系统默认方式打开目录。"""
+    """使用系统默认方式打开目录，并确保窗口在前台显示。"""
     system = platform.system()
+    path_str = str(path)
+    
     if system == "Darwin":
-        subprocess.Popen(["open", str(path)])
+        # macOS: 使用 open 命令
+        subprocess.Popen(["open", path_str])
     elif system == "Windows":
-        # Windows explorer 即使成功也返回非零退出码，必须用 Popen 且不检查返回值
-        # 使用 start 命令确保新窗口在前台显示
-        subprocess.Popen(["cmd", "/c", "start", "", str(path)], shell=True)
+        # Windows: 使用 start 命令确保新窗口在前台显示
+        # explorer 即使成功也返回非零退出码，必须用 Popen 且不检查返回值
+        subprocess.Popen(["cmd", "/c", "start", "", path_str], shell=True)
     else:
-        subprocess.Popen(["xdg-open", str(path)])
+        # Linux: 尝试 xdg-open，如果失败则尝试其他文件管理器
+        try:
+            subprocess.Popen(["xdg-open", path_str])
+        except FileNotFoundError:
+            # 备选方案：尝试常见的文件管理器
+            for fm in ["nautilus", "dolphin", "thunar", "pcmanfm"]:
+                try:
+                    subprocess.Popen([fm, path_str])
+                    break
+                except FileNotFoundError:
+                    continue
 
 
 @app.route("/api/open-project-dir", methods=["POST"])
