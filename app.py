@@ -1822,18 +1822,19 @@ def api_export_import(import_id):
         filename = data.get("filename", "export.xlsx")
         
         # 查询导入记录
-        imp = db.execute("SELECT * FROM salary_imports WHERE id = ?", (import_id,)).fetchone()
-        if not imp:
-            return jsonify({"error": "导入记录不存在"}), 404
-        
-        # 查询所有人员及工资数据
-        rows = db.execute("""
-            SELECT p.community, p.name, p.email, sr.data_json
-            FROM persons p
-            LEFT JOIN salary_records sr ON sr.person_id = p.id
-            WHERE p.import_id = ?
-            ORDER BY p.id
-        """, (import_id,)).fetchall()
+        with get_db() as conn:
+            imp = conn.execute("SELECT * FROM salary_imports WHERE id = ?", (import_id,)).fetchone()
+            if not imp:
+                return jsonify({"error": "导入记录不存在"}), 404
+            
+            # 查询所有人员及工资数据
+            rows = conn.execute("""
+                SELECT p.community, p.name, p.email, sr.data_json
+                FROM persons p
+                LEFT JOIN salary_records sr ON sr.person_id = p.id
+                WHERE p.import_id = ?
+                ORDER BY p.id
+            """, (import_id,)).fetchall()
         
         if not rows:
             return jsonify({"error": "没有可导出的数据"}), 404
