@@ -1823,11 +1823,12 @@ def _open_dir(path: Path):
     """使用系统默认方式打开目录。"""
     system = platform.system()
     if system == "Darwin":
-        subprocess.run(["open", str(path)], check=True)
+        subprocess.Popen(["open", str(path)])
     elif system == "Windows":
-        subprocess.run(["explorer", str(path)], check=True)
+        # Windows explorer 即使成功也返回非零退出码，必须用 Popen 且不检查返回值
+        subprocess.Popen(["explorer", str(path)])
     else:
-        subprocess.run(["xdg-open", str(path)], check=True)
+        subprocess.Popen(["xdg-open", str(path)])
 
 
 @app.route("/api/open-project-dir", methods=["POST"])
