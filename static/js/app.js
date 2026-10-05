@@ -2483,7 +2483,7 @@ $('#do-import').addEventListener('click', async () => {
     // 存在未匹配记录时，二次确认
     if (state.importPreview.unmatched && state.importPreview.unmatched > 0) {
         const msg = `检测到 ${state.importPreview.unmatched} 条工资记录未匹配到邮箱。<br><br>点击「确定」将导入全部工资数据，未匹配人员的邮箱留空；点击「取消」放弃导入。`;
-        const confirmed = await confirmModal(msg);
+        const confirmed = await confirmModal(msg, true);
         if (!confirmed) return;
     }
     const cfg = buildImportConfig();
@@ -3079,7 +3079,7 @@ document.addEventListener('click', (e) => {
 });
 
 // 自定义确认弹框（居中显示，替代原生 confirm）
-function confirmModal(message) {
+function confirmModal(message, allowHtml = false) {
     return new Promise((resolve) => {
         // 防止重复弹出：已有弹框时直接返回取消
         if (document.querySelector('.confirm-modal-overlay')) {
@@ -3088,8 +3088,9 @@ function confirmModal(message) {
         }
         const overlay = document.createElement('div');
         overlay.className = 'confirm-modal-overlay';
+        const safeMessage = allowHtml ? message : escapeHtml(message);
         overlay.innerHTML = `<div class="confirm-modal-box">
-            <p class="confirm-modal-message">${escapeHtml(message)}</p>
+            <p class="confirm-modal-message">${safeMessage}</p>
             <div class="confirm-modal-actions">
                 <button class="btn" data-confirm="cancel">取消</button>
                 <button class="btn danger" data-confirm="ok">确定</button>
