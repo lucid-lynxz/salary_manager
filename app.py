@@ -1859,8 +1859,8 @@ def api_export_import(import_id):
         # 列顺序：工资表原始列 + 邮箱列
         headers = salary_columns + ["邮箱"]
         
-        # 冻结首行和姓名列（B列）
-        ws.freeze_panes = 'C2'  # C2表示冻结第1行和第1-2列（社区、姓名）
+        # 冻结首行和前3列（社区、姓名、邮箱）
+        ws.freeze_panes = 'D2'  # D2表示冻结第1行和A-C列
         
         # 写入表头（带样式）
         header_font = Font(bold=True, color="FFFFFF")
