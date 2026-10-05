@@ -1921,6 +1921,7 @@ def api_export_import(import_id):
     
     except Exception as e:
         import traceback
+        import sys
         error_detail = traceback.format_exc()
         print(f"[EXPORT] ERROR: {error_detail}", file=sys.stderr, flush=True)
         return jsonify({"error": f"导出失败: {str(e)}"}), 500
