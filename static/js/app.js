@@ -2842,7 +2842,9 @@ async function loadHistory() {
             e.stopPropagation();
             const year = exportBtn.dataset.year;
             const month = exportBtn.dataset.month;
-            const filename = `${year}-${month}_工资_邮箱表.xlsx`;
+            // 月份补零：1 -> 01, 12 -> 12
+            const monthStr = String(month).padStart(2, '0');
+            const filename = `${year}${monthStr}_工资邮箱表.xlsx`;
             
             try {
                 const res = await fetch(`/api/export-import/${item.id}`, {
