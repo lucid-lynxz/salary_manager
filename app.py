@@ -1899,14 +1899,8 @@ def api_package_project():
                     continue
                 zf.write(path, path.relative_to(BASE_DIR))
 
-        # Windows 下 explorer 命令可能返回非零退出码（即使成功打开），改用 start_new_session + ignore_errors
-        system = platform.system()
-        if system == "Windows":
-            subprocess.Popen(["explorer", str(packages_dir)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        elif system == "Darwin":
-            subprocess.run(["open", str(packages_dir)], check=False)
-        else:
-            subprocess.run(["xdg-open", str(packages_dir)], check=False)
+        # 打开 packages 目录
+        _open_dir(packages_dir)
 
         return jsonify({"zip": str(zip_path), "opened": str(packages_dir), "mode": mode})
     except Exception as e:
