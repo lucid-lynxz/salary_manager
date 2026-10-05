@@ -2830,14 +2830,52 @@ async function loadHistory() {
                     工资：${escapeHtml(item.salary_filename || '-')} | 邮箱：${escapeHtml(item.email_filename || '-')} | ${new Date(item.imported_at).toLocaleString()}
                 </div>
             </div>
-            <button class="btn danger" data-id="${item.id}">删除</button>
+            <div style="display:flex;gap:8px;">
+                <button class="btn primary" data-export-id="${item.id}" data-year="${item.year}" data-month="${item.month}">导出</button>
+                <button class="btn danger" data-delete-id="${item.id}">删除</button>
+            </div>
         `;
-        div.querySelector('button').addEventListener('click', async (e) => {
+        
+        // 绑定导出按钮
+        const exportBtn = div.querySelector('[data-export-id]');
+        exportBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const year = exportBtn.dataset.year;
+            const month = exportBtn.dataset.month;
+            const filename = `${year}-${month}_工资_邮箱表.xlsx`;
+            
+            try {
+                const res = await fetch(`/api/export-import/${item.id}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filename })
+                });
+                const data = await res.json();
+                
+                if (data.error) {
+                    alert('导出失败: ' + data.error);
+                } else {
+                    // 触发下载
+                    const link = document.createElement('a');
+                    link.href = `/api/download-export/${data.export_id}?filename=${encodeURIComponent(filename)}`;
+                    link.download = filename;
+                    link.click();
+                }
+            } catch (err) {
+                console.error('导出异常:', err);
+                alert('导出失败: ' + err.message);
+            }
+        });
+        
+        // 绑定删除按钮
+        const deleteBtn = div.querySelector('[data-delete-id]');
+        deleteBtn.addEventListener('click', async (e) => {
             e.stopPropagation();
             if (!await confirmModal('确定删除这条导入记录及其所有人员工资数据吗？')) return;
             await fetch(`/api/import/${item.id}`, { method: 'DELETE' });
             loadHistory();
         });
+        
         div.addEventListener('dblclick', () => showImportDetail(item.id));
         el.appendChild(div);
     });

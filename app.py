@@ -1811,6 +1811,144 @@ def api_write_back_email():
         return jsonify({"error": f"写回失败: {str(e)}"}), 500
 
 
+@app.route("/api/export-import/<int:import_id>", methods=["POST"])
+def api_export_import(import_id):
+    """导出导入历史的合并数据为 Excel 文件。"""
+    try:
+        import openpyxl
+        from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+        
+        data = request.get_json() or {}
+        filename = data.get("filename", "export.xlsx")
+        
+        # 查询导入记录
+        imp = db.execute("SELECT * FROM salary_imports WHERE id = ?", (import_id,)).fetchone()
+        if not imp:
+            return jsonify({"error": "导入记录不存在"}), 404
+        
+        # 查询所有人员及工资数据
+        rows = db.execute("""
+            SELECT p.community, p.name, p.email, sr.data_json
+            FROM persons p
+            LEFT JOIN salary_records sr ON sr.person_id = p.id
+            WHERE p.import_id = ?
+            ORDER BY p.id
+        """, (import_id,)).fetchall()
+        
+        if not rows:
+            return jsonify({"error": "没有可导出的数据"}), 404
+        
+        # 创建工作簿
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "工资邮箱合并表"
+        
+        # 收集所有列名（从 data_json 中提取）
+        all_columns = set()
+        for row in rows:
+            if row[3]:  # data_json
+                detail = json.loads(row[3])
+                all_columns.update(detail.keys())
+        
+        # 固定列顺序：社区、姓名、邮箱 + 工资表原始列
+        fixed_cols = ["社区", "姓名", "邮箱"]
+        dynamic_cols = [col for col in all_columns if col not in fixed_cols]
+        headers = fixed_cols + dynamic_cols
+        
+        # 写入表头（带样式）
+        header_font = Font(bold=True, color="FFFFFF")
+        header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+        header_alignment = Alignment(horizontal="center", vertical="center")
+        thin_border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+        
+        for col_idx, header in enumerate(headers, 1):
+            cell = ws.cell(row=1, column=col_idx, value=header)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = header_alignment
+            cell.border = thin_border
+        
+        # 写入数据
+        center_alignment = Alignment(horizontal="center", vertical="center")
+        for row_idx, row in enumerate(rows, 2):
+            community, name, email, data_json = row
+            detail = json.loads(data_json) if data_json else {}
+            
+            for col_idx, header in enumerate(headers, 1):
+                if header == "社区":
+                    value = community
+                elif header == "姓名":
+                    value = name
+                elif header == "邮箱":
+                    value = email or ""
+                else:
+                    value = detail.get(header, "")
+                
+                cell = ws.cell(row=row_idx, column=col_idx, value=value)
+                cell.alignment = center_alignment
+                cell.border = thin_border
+        
+        # 自动调整列宽
+        for col_idx, header in enumerate(headers, 1):
+            max_length = len(str(header))
+            for row_idx in range(2, len(rows) + 2):
+                cell_value = ws.cell(row=row_idx, column=col_idx).value
+                if cell_value:
+                    max_length = max(max_length, len(str(cell_value)))
+            ws.column_dimensions[openpyxl.utils.get_column_letter(col_idx)].width = min(max_length + 2, 50)
+        
+        # 保存到临时文件
+        import tempfile
+        import uuid
+        
+        export_dir = BASE_DIR / "exports"
+        export_dir.mkdir(exist_ok=True)
+        
+        export_id = str(uuid.uuid4())
+        export_path = export_dir / f"{export_id}.xlsx"
+        wb.save(export_path)
+        
+        return jsonify({
+            "export_id": export_id,
+            "filename": filename,
+            "message": "导出成功"
+        })
+    
+    except Exception as e:
+        import traceback
+        error_detail = traceback.format_exc()
+        print(f"[EXPORT] ERROR: {error_detail}", file=sys.stderr, flush=True)
+        return jsonify({"error": f"导出失败: {str(e)}"}), 500
+
+
+@app.route("/api/download-export/<export_id>", methods=["GET"])
+def api_download_export(export_id):
+    """下载导出的 Excel 文件。"""
+    try:
+        export_path = BASE_DIR / "exports" / f"{export_id}.xlsx"
+        if not export_path.exists():
+            return jsonify({"error": "文件不存在或已过期"}), 404
+        
+        from flask import send_file
+        
+        # 从查询参数获取原始文件名
+        original_filename = request.args.get("filename", f"{export_id}.xlsx")
+        
+        return send_file(
+            export_path,
+            as_attachment=True,
+            download_name=original_filename,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 if not USER_CONFIG_PATH.exists():
     save_user_config(json.loads(json.dumps(DEFAULT_USER_CONFIG)))
 
