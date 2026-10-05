@@ -1826,8 +1826,8 @@ def _open_dir(path: Path):
         subprocess.Popen(["open", str(path)])
     elif system == "Windows":
         # Windows explorer 即使成功也返回非零退出码，必须用 Popen 且不检查返回值
-        # 使用 /e, 参数确保在新窗口中打开并聚焦
-        subprocess.Popen(["explorer", "/e,", str(path)])
+        # 使用 start 命令确保新窗口在前台显示
+        subprocess.Popen(["cmd", "/c", "start", "", str(path)], shell=True)
     else:
         subprocess.Popen(["xdg-open", str(path)])
 
