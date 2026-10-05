@@ -1828,9 +1828,10 @@ def _open_dir(path: Path):
         # macOS: 使用 open 命令
         subprocess.Popen(["open", path_str])
     elif system == "Windows":
-        # Windows: 使用 start 命令确保新窗口在前台显示
+        # Windows: 使用 PowerShell Start-Process 确保窗口在前台显示
         # explorer 即使成功也返回非零退出码，必须用 Popen 且不检查返回值
-        subprocess.Popen(["cmd", "/c", "start", "", path_str], shell=True)
+        ps_cmd = f'Start-Process -FilePath "explorer" -ArgumentList "{path_str}"'
+        subprocess.Popen(["powershell", "-Command", ps_cmd], shell=True)
     else:
         # Linux: 尝试 xdg-open，如果失败则尝试其他文件管理器
         try:
