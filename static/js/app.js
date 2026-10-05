@@ -2850,6 +2850,16 @@ async function loadHistory() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ filename })
                 });
+                
+                // 检查响应类型
+                const contentType = res.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    const text = await res.text();
+                    console.error('导出接口返回非JSON:', text.substring(0, 200));
+                    alert('导出失败: 服务器返回了非JSON响应');
+                    return;
+                }
+                
                 const data = await res.json();
                 
                 if (data.error) {
