@@ -1844,17 +1844,20 @@ def api_export_import(import_id):
         ws = wb.active
         ws.title = "工资邮箱合并表"
         
-        # 收集所有列名（从 data_json 中提取）
-        all_columns = set()
+        # 从第一条有data_json的记录中提取列顺序（保持原始顺序）
+        salary_columns = []
         for row in rows:
             if row[3]:  # data_json
                 detail = json.loads(row[3])
-                all_columns.update(detail.keys())
+                salary_columns = list(detail.keys())
+                break
         
-        # 固定列顺序：社区、姓名、邮箱 + 工资表原始列
-        fixed_cols = ["社区", "姓名", "邮箱"]
-        dynamic_cols = [col for col in all_columns if col not in fixed_cols]
-        headers = fixed_cols + dynamic_cols
+        # 如果没有找到列，使用空列表
+        if not salary_columns:
+            return jsonify({"error": "数据中没有工资记录"}), 404
+        
+        # 列顺序：工资表原始列 + 邮箱列
+        headers = salary_columns + ["邮箱"]
         
         # 写入表头（带样式）
         header_font = Font(bold=True, color="FFFFFF")
