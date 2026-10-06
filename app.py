@@ -2615,7 +2615,11 @@ def _build_email_content(salary_data: dict, community: str, name: str) -> str:
     for key, value in salary_data.items():
         if key.startswith('_') or value is None or value == '' or key in skip_fields:
             continue
-        valid_fields.append((key, str(value)))
+        # 时间值去掉 00:00:00
+        text_val = str(value)
+        text_val = re.sub(r'\s+00:00:00$', '', text_val)
+        text_val = re.sub(r'T00:00:00$', '', text_val)
+        valid_fields.append((key, text_val))
     
     if not valid_fields:
         return '<p>暂无工资数据</p>'
