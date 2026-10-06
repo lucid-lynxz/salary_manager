@@ -2591,32 +2591,64 @@ def api_import_send(import_id):
 
 
 def _build_email_content(salary_data: dict, community: str, name: str) -> str:
-    """构建工资单邮件HTML内容。"""
-    # 提取关键数据
-    gross = salary_data.get('应发合计', salary_data.get('gross_salary', '-'))
-    deduction = salary_data.get('扣款合计', salary_data.get('total_deduction', '-'))
-    net = salary_data.get('实发合计', salary_data.get('net_salary', '-'))
+    """构建工资单邮件HTML内容，动态显示所有工资表字段。"""
+    # 定义需要高亮显示的汇总字段（保持原有样式）
+    highlight_fields = {'应发合计', '扣款合计', '实发合计', 'gross_salary', 'total_deduction', 'net_salary'}
+    
+    # 构建表格行
+    rows_html = ""
+    for key, value in salary_data.items():
+        # 跳过内部字段和空值
+        if key.startswith('_') or value is None or value == '':
+            continue
+        
+        # 格式化金额显示
+        display_value = str(value)
+        is_highlight = key in highlight_fields
+        
+        if is_highlight:
+            # 判断是应发、扣款还是实发
+            if '应发' in key or 'gross' in key.lower():
+                color = '#2e7d32'  # 绿色
+                bg_color = ''
+                font_weight = 'normal'
+            elif '扣款' in key or 'deduction' in key.lower():
+                color = '#c62828'  # 红色
+                bg_color = ''
+                font_weight = 'normal'
+            elif '实发' in key or 'net' in key.lower():
+                color = '#1b5e20'  # 深绿色
+                bg_color = 'background-color: #e8f5e9;'
+                font_weight = 'bold'
+            else:
+                color = '#333'
+                bg_color = ''
+                font_weight = 'normal'
+            
+            row_style = f'style="{bg_color}"' if bg_color else ''
+            td_style = f'style="padding: 10px; border: 1px solid #ddd; color: {color}; font-weight: {font_weight};"'
+            rows_html += f"""
+            <tr {row_style}>
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">{escapeHtml(key)}</td>
+                <td {td_style}>¥{escapeHtml(display_value)}</td>
+            </tr>"""
+        else:
+            # 普通字段
+            rows_html += f"""
+            <tr>
+                <td style="padding: 10px; border: 1px solid #ddd;">{escapeHtml(key)}</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">{escapeHtml(display_value)}</td>
+            </tr>"""
     
     html = f"""
-    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-        <h2 style="color: #333;">{community} - {name} 工资单</h2>
+    <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto;">
+        <h2 style="color: #333;">{escapeHtml(community)} - {escapeHtml(name)} 工资单</h2>
         <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
             <tr style="background-color: #f5f5f5;">
                 <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">项目</td>
-                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">金额</td>
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">金额/内容</td>
             </tr>
-            <tr>
-                <td style="padding: 10px; border: 1px solid #ddd;">应发合计</td>
-                <td style="padding: 10px; border: 1px solid #ddd; color: #2e7d32;">¥{gross}</td>
-            </tr>
-            <tr>
-                <td style="padding: 10px; border: 1px solid #ddd;">扣款合计</td>
-                <td style="padding: 10px; border: 1px solid #ddd; color: #c62828;">¥{deduction}</td>
-            </tr>
-            <tr style="background-color: #e8f5e9;">
-                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">实发合计</td>
-                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold; color: #1b5e20; font-size: 18px;">¥{net}</td>
-            </tr>
+            {rows_html}
         </table>
         <p style="margin-top: 20px; color: #666; font-size: 14px;">
             此邮件由系统自动发送，请勿直接回复。<br>
