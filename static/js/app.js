@@ -3560,11 +3560,12 @@ async function loadSenders() {
             const statusClass = sender.is_enabled ? 'enabled' : 'disabled';
             const statusText = sender.is_enabled ? '启用' : '禁用';
             const lastSend = sender.last_send_time ? formatDateTime(sender.last_send_time) : '从未发送';
+            const displayName = sender.alias ? `${escapeHtml(sender.alias)} (${escapeHtml(sender.email)})` : escapeHtml(sender.email);
             
             html += `
                 <div class="sender-card ${statusClass}">
                     <div class="sender-card-header">
-                        <div class="sender-email">${escapeHtml(sender.email)}</div>
+                        <div class="sender-email">${displayName}</div>
                         <div class="sender-status-badge ${statusClass}">${statusText}</div>
                     </div>
                     <div class="sender-card-body">
@@ -3622,6 +3623,7 @@ async function editSender(id) {
         $('#sender-modal-title').textContent = '编辑发件人';
         $('#sender-id').value = id;
         $('#sender-email').value = sender.email;
+        $('#sender-alias').value = sender.alias || '';
         $('#sender-smtp-server').value = sender.smtp_server;
         $('#sender-smtp-port').value = sender.smtp_port;
         $('#sender-imap-server').value = sender.imap_server;
@@ -3647,6 +3649,7 @@ async function saveSender(event) {
     
     const data = {
         email: $('#sender-email').value,
+        alias: $('#sender-alias').value,
         smtp_server: $('#sender-smtp-server').value,
         smtp_port: parseInt($('#sender-smtp-port').value),
         imap_server: $('#sender-imap-server').value,

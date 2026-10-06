@@ -99,6 +99,7 @@ def init_db():
     CREATE TABLE IF NOT EXISTS sender_emails (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         email TEXT NOT NULL UNIQUE,
+        alias TEXT,
         password_encrypted TEXT NOT NULL,
         smtp_server TEXT NOT NULL DEFAULT 'smtp.qq.com',
         smtp_port INTEGER NOT NULL DEFAULT 587,
@@ -118,6 +119,12 @@ def init_db():
     """
     with get_db() as conn:
         conn.executescript(schema)
+        
+        # 迁移：为 sender_emails 表添加 alias 字段
+        cur = conn.execute("PRAGMA table_info(sender_emails)")
+        columns = [col["name"] for col in cur.fetchall()]
+        if "alias" not in columns:
+            conn.execute("ALTER TABLE sender_emails ADD COLUMN alias TEXT")
         
         # 迁移：旧版 persons 表有 UNIQUE(import_id, community, name) 约束，
         # 会导致同社区同名的工资记录被覆盖。检测并移除该约束。
@@ -2040,6 +2047,7 @@ def api_create_sender_email():
         imap_server = data.get("imap_server", "imap.qq.com").strip()
         imap_port = data.get("imap_port", 993)
         send_interval = data.get("send_interval", 10)
+        alias = data.get("alias", "").strip() or None
         
         # Validate email format
         if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
@@ -2059,10 +2067,10 @@ def api_create_sender_email():
         
         with get_db() as conn:
             conn.execute("""
-                INSERT INTO sender_emails (email, password_encrypted, smtp_server, smtp_port, 
+                INSERT INTO sender_emails (email, alias, password_encrypted, smtp_server, smtp_port, 
                                           imap_server, imap_port, send_interval)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (email, password_encrypted, smtp_server, int(smtp_port),
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, (email, alias, password_encrypted, smtp_server, int(smtp_port),
                   imap_server, int(imap_port), int(send_interval)))
         
         return jsonify({"success": True, "message": "发件人邮箱添加成功"}), 201
@@ -2080,7 +2088,7 @@ def api_list_sender_emails():
     try:
         with get_db() as conn:
             rows = conn.execute("""
-                SELECT id, email, smtp_server, smtp_port, imap_server, imap_port,
+                SELECT id, email, alias, smtp_server, smtp_port, imap_server, imap_port,
                        is_enabled, send_interval, last_send_time, created_at, updated_at
                 FROM sender_emails
                 ORDER BY created_at DESC
@@ -2091,6 +2099,7 @@ def api_list_sender_emails():
                 senders.append({
                     "id": row["id"],
                     "email": row["email"],
+                    "alias": row["alias"],
                     "smtp_server": row["smtp_server"],
                     "smtp_port": row["smtp_port"],
                     "imap_server": row["imap_server"],
@@ -2123,6 +2132,7 @@ def api_update_sender_email(sender_id):
             
             # Update fields
             email = data.get("email", existing["email"]).strip()
+            alias = data.get("alias", existing["alias"] or "").strip() or None
             smtp_server = data.get("smtp_server", existing["smtp_server"]).strip()
             smtp_port = data.get("smtp_port", existing["smtp_port"])
             imap_server = data.get("imap_server", existing["imap_server"]).strip()
@@ -2152,11 +2162,11 @@ def api_update_sender_email(sender_id):
             # Update database
             conn.execute("""
                 UPDATE sender_emails 
-                SET email = ?, password_encrypted = ?, smtp_server = ?, smtp_port = ?,
+                SET email = ?, alias = ?, password_encrypted = ?, smtp_server = ?, smtp_port = ?,
                     imap_server = ?, imap_port = ?, send_interval = ?,
                     updated_at = datetime('now', 'localtime')
                 WHERE id = ?
-            """, (email, password_encrypted, smtp_server, int(smtp_port),
+            """, (email, alias, password_encrypted, smtp_server, int(smtp_port),
                   imap_server, int(imap_port), int(send_interval), sender_id))
         
         return jsonify({"success": True, "message": "发件人邮箱更新成功"}), 200
