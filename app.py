@@ -1685,6 +1685,44 @@ def api_import_send_person(import_id, person_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/person/<int:person_id>/email", methods=["POST"])
+def api_update_person_email(person_id):
+    """更新人员邮箱地址。"""
+    try:
+        data = request.get_json()
+        if not data or "email" not in data:
+            return jsonify({"error": "缺少email字段"}), 400
+        
+        new_email = data["email"].strip()
+        
+        # 简单邮箱格式验证
+        import re
+        if new_email and not re.match(r'^[^\s@]+@[^\s@]+\.[^\s@]+$', new_email):
+            return jsonify({"error": "邮箱格式不正确"}), 400
+        
+        with get_db() as conn:
+            # 检查人员是否存在
+            person = conn.execute(
+                "SELECT id FROM persons WHERE id = ?", (person_id,)
+            ).fetchone()
+            
+            if not person:
+                return jsonify({"error": "人员记录不存在"}), 404
+            
+            # 更新邮箱
+            conn.execute(
+                "UPDATE persons SET email = ? WHERE id = ?",
+                (new_email if new_email else None, person_id)
+            )
+            conn.commit()
+            
+            return jsonify({"success": True, "email": new_email}), 200
+            
+    except Exception as e:
+        print(f"[UPDATE EMAIL ERROR] Error: {e}", file=sys.stderr, flush=True)
+        return jsonify({"error": str(e)}), 500
+
+
 # ---------------------------------------------------------------------------
 # User config (personalized import defaults)
 # ---------------------------------------------------------------------------

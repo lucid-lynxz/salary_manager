@@ -3302,18 +3302,19 @@ async function showImportDetail(importId) {
         }
 
         function rowHtml(rec) {
+            const hasEmail = rec.email && rec.email.trim();
             return `<tr data-person-id="${rec.person_id}">
                 ${detailCols.map((col, i) => {
                     const cls = freezeClass(i);
                     const v = (rec.detail || {})[col];
                     return `<td${cls ? ` class="${cls}"` : ''}>${escapeHtml(v == null ? '' : String(v))}</td>`;
                 }).join('')}
-                <td>${escapeHtml(rec.email || '-')}</td>
+                <td class="email-cell" data-email="${escapeHtml(rec.email || '')}" data-person-id="${rec.person_id}">${hasEmail ? escapeHtml(rec.email) : '<span class="email-missing">双击编辑邮箱</span>'}</td>
                 <td>${escapeHtml(rec.sender_email || '-')}</td>
                 <td>${formatSendTime(rec.email_sent_at)}</td>
                 <td>
                     <button class="btn small text" data-resend-person="${rec.person_id}" 
-                        ${!rec.email ? 'disabled title="无邮箱"' : ''}>
+                        ${!hasEmail ? 'disabled title="无邮箱"' : ''}>
                         发送
                     </button>
                 </td>
@@ -3455,6 +3456,11 @@ async function showImportDetail(importId) {
                 });
             });
 
+            // 绑定邮箱单元格双击编辑
+            body.querySelectorAll('.email-cell').forEach(cell => {
+                cell.addEventListener('dblclick', () => startEmailEdit(cell));
+            });
+
             // 根据第一列实际宽度设置第二列的 left 偏移
             requestAnimationFrame(() => {
                 const wrap = $('#import-detail-wrap');
@@ -3463,6 +3469,133 @@ async function showImportDetail(importId) {
                     wrap.style.setProperty('--freeze-1-width', firstTh.offsetWidth + 'px');
                 }
             });
+        }
+
+        // 邮箱单元格编辑逻辑
+        function startEmailEdit(cell) {
+            const personId = parseInt(cell.dataset.personId);
+            const currentEmail = cell.dataset.email || '';
+            const record = records.find(r => r.person_id === personId);
+            if (!record) return;
+
+            // 如果已经在编辑，不重复创建
+            if (cell.querySelector('input')) return;
+
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'email-edit-input';
+            input.value = currentEmail;
+            input.placeholder = '输入邮箱地址';
+            
+            cell.innerHTML = '';
+            cell.appendChild(input);
+            input.focus();
+            input.select();
+
+            let isSaving = false;
+
+            async function saveEmail() {
+                if (isSaving) return;
+                const newEmail = input.value.trim();
+
+                // 如果为空，恢复原值
+                if (!newEmail) {
+                    cell.innerHTML = '<span class="email-missing">双击编辑邮箱</span>';
+                    cell.dataset.email = '';
+                    if (record) record.email = '';
+                    updateSendButton(personId, false);
+                    return;
+                }
+
+                // 验证邮箱格式
+                const validation = validateEmailSimple(newEmail);
+                if (!validation.valid) {
+                    const confirmed = await confirmModal(`邮箱格式无效：${validation.reason}\n\n点击"确认"继续编辑，点击"取消"清空邮箱`);
+                    if (!confirmed) {
+                        // 取消：清空并退出编辑
+                        cell.innerHTML = '<span class="email-missing">双击编辑邮箱</span>';
+                        cell.dataset.email = '';
+                        if (record) record.email = '';
+                        updateSendButton(personId, false);
+                    }
+                    // 确认后保持编辑状态，让用户修改
+                    input.focus();
+                    input.select();
+                    return;
+                }
+
+                // 保存到后端
+                isSaving = true;
+                try {
+                    const res = await fetch(`/api/person/${personId}/email`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ email: newEmail })
+                    });
+                    const data = await res.json();
+                    
+                    if (data.error) {
+                        infoModal(`保存失败：${data.error}`);
+                        input.focus();
+                        isSaving = false;
+                        return;
+                    }
+
+                    // 更新本地数据
+                    cell.textContent = newEmail;
+                    cell.dataset.email = newEmail;
+                    if (record) record.email = newEmail;
+                    updateSendButton(personId, true);
+                } catch (e) {
+                    infoModal(`保存异常：${e.message}`);
+                    input.focus();
+                } finally {
+                    isSaving = false;
+                }
+            }
+
+            // Enter 键保存
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    saveEmail();
+                } else if (e.key === 'Escape') {
+                    // Esc 取消，恢复原值
+                    cell.innerHTML = currentEmail ? escapeHtml(currentEmail) : '<span class="email-missing">双击编辑邮箱</span>';
+                    cell.dataset.email = currentEmail;
+                    if (record) record.email = currentEmail;
+                    updateSendButton(personId, !!currentEmail);
+                }
+            });
+
+            // 失焦时保存
+            input.addEventListener('blur', () => {
+                // 延迟一点，避免点击其他元素时立即触发
+                setTimeout(() => {
+                    if (cell.contains(input)) {
+                        saveEmail();
+                    }
+                }, 150);
+            });
+        }
+
+        function updateSendButton(personId, hasEmail) {
+            const btn = body.querySelector(`[data-resend-person="${personId}"]`);
+            if (btn) {
+                btn.disabled = !hasEmail;
+                btn.title = hasEmail ? '' : '无邮箱';
+            }
+        }
+
+        function validateEmailSimple(email) {
+            if (!email) return { valid: false, reason: '邮箱不能为空' };
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+                return { valid: false, reason: '邮箱格式不正确（缺少@或域名）' };
+            }
+            if (email.length > 254) {
+                return { valid: false, reason: '邮箱长度超过限制（最大254字符）' };
+            }
+            return { valid: true };
         }
 
         $('#modal').classList.add('import-detail-modal');
