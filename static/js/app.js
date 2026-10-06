@@ -3526,13 +3526,22 @@ async function showImportDetail(importId) {
                 // 验证邮箱格式
                 const validation = validateEmailSimple(newEmail);
                 if (!validation.valid) {
-                    const confirmed = await confirmModal(`邮箱格式无效：${validation.reason}\n\n点击"确认"继续编辑，点击"取消"清空邮箱`);
+                    const hasOriginalEmail = currentEmail && currentEmail.trim();
+                    const cancelActionText = hasOriginalEmail ? '恢复原邮箱' : '清空邮箱';
+                    const confirmed = await confirmModal(`邮箱格式无效：${validation.reason}\n\n点击"确认"继续编辑，点击"取消"${cancelActionText}`);
                     if (!confirmed) {
-                        // 取消：清空并退出编辑
-                        cell.innerHTML = '<span class="email-missing">双击编辑邮箱</span>';
-                        cell.dataset.email = '';
-                        if (record) record.email = '';
-                        updateSendButton(personId, false);
+                        // 取消：恢复原值（有原邮箱则恢复，无则清空）
+                        if (hasOriginalEmail) {
+                            cell.textContent = escapeHtml(currentEmail);
+                            cell.dataset.email = currentEmail;
+                            if (record) record.email = currentEmail;
+                            updateSendButton(personId, true);
+                        } else {
+                            cell.innerHTML = '<span class="email-missing">双击编辑邮箱</span>';
+                            cell.dataset.email = '';
+                            if (record) record.email = '';
+                            updateSendButton(personId, false);
+                        }
                     }
                     // 确认后保持编辑状态，让用户修改
                     input.focus();
