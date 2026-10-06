@@ -402,6 +402,38 @@
         </div>
     </div>
 
+    <!-- 测试邮件弹窗 -->
+    <div id="test-email-modal" class="modal hidden">
+        <div class="modal-content modal-large">
+            <span class="close-btn" onclick="closeTestEmailModal()">&times;</span>
+            <h2>测试发送邮件</h2>
+            <form id="test-email-form" onsubmit="sendTestEmail(event)">
+                <input type="hidden" id="test-sender-id">
+                
+                <div class="form-group">
+                    <label for="test-recipient">收件人邮箱 <span class="required">*</span></label>
+                    <input type="email" id="test-recipient" required placeholder="example@qq.com">
+                </div>
+
+                <div class="form-group">
+                    <label for="test-subject">邮件主题</label>
+                    <input type="text" id="test-subject" value="发送邮箱测试" placeholder="发送邮箱测试">
+                </div>
+
+                <div class="form-group">
+                    <label for="test-content">邮件内容（支持HTML）</label>
+                    <textarea id="test-content" rows="6" placeholder="请输入邮件内容"></textarea>
+                    <span class="hint-text">留空则使用默认测试内容（包含当前时间）</span>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn text" onclick="closeTestEmailModal()">取消</button>
+                    <button type="submit" class="btn primary" id="test-send-btn">发送测试邮件</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <script src="/static/js/app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://npmcdn.com/flatpickr/dist/l10n/zh.js"></script>

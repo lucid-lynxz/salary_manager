@@ -2212,6 +2212,80 @@ def api_toggle_sender_email(sender_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/sender-emails/<int:sender_id>/test", methods=["POST"])
+def api_test_sender_email(sender_id):
+    """测试发件人邮箱配置。"""
+    try:
+        data = request.get_json() or {}
+        
+        recipient_email = data.get("recipient_email", "").strip()
+        subject = data.get("subject", "发送邮箱测试").strip()
+        content = data.get("content", "").strip()
+        
+        if not recipient_email:
+            return jsonify({"error": "收件人邮箱不能为空"}), 400
+        
+        # Validate email format
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', recipient_email):
+            return jsonify({"error": "收件人邮箱格式不正确"}), 400
+        
+        with get_db() as conn:
+            sender = conn.execute("SELECT * FROM sender_emails WHERE id = ?", (sender_id,)).fetchone()
+            if not sender:
+                return jsonify({"error": "发件人不存在"}), 404
+            
+            # Decrypt password
+            password = decrypt_password(sender["password_encrypted"])
+            
+            # Create mail config
+            mail_config = {
+                "senderEmail": sender["email"],
+                "senderPwd": password,
+                "smtpServer": sender["smtp_server"],
+                "smtpPort": sender["smtp_port"],
+                "imapServer": sender["imap_server"],
+                "imapPort": sender["imap_port"],
+                "debugLevel": 0,
+                "receiverEmail": recipient_email,
+                "subject": subject,
+            }
+            
+            # Create mail util and send test email
+            from util.MailUtil import MailUtil
+            mail_util = MailUtil(mail_config)
+            
+            # Set default content if empty
+            if not content:
+                now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                content = f"<html><body><p>这是一封测试邮件，发送时间：{now}</p></body></html>"
+            
+            mail_util.setMailMsg(content, fromTip=f"测试 <{sender['email']}>", subject=subject)
+            success = mail_util.sendTo([recipient_email])
+            mail_util.quit()
+            
+            if success:
+                return jsonify({"success": True, "message": "测试邮件发送成功"}), 200
+            else:
+                return jsonify({"error": "发送失败，请检查配置和网络连接"}), 500
+        
+    except smtplib.SMTPAuthenticationError as e:
+        error_msg = f"SMTP认证失败：{str(e)}"
+        print(f"[TEST EMAIL ERROR] {error_msg}", file=sys.stderr, flush=True)
+        return jsonify({"error": error_msg}), 401
+    except smtplib.SMTPConnectError as e:
+        error_msg = f"SMTP连接失败：{str(e)}"
+        print(f"[TEST EMAIL ERROR] {error_msg}", file=sys.stderr, flush=True)
+        return jsonify({"error": error_msg}), 503
+    except smtplib.SMTPException as e:
+        error_msg = f"SMTP错误：{str(e)}"
+        print(f"[TEST EMAIL ERROR] {error_msg}", file=sys.stderr, flush=True)
+        return jsonify({"error": error_msg}), 500
+    except Exception as e:
+        error_msg = f"发送失败：{str(e)}"
+        print(f"[TEST EMAIL ERROR] {error_msg}", file=sys.stderr, flush=True)
+        return jsonify({"error": error_msg}), 500
+
+
 # ---------------------------------------------------------------------------
 # Batch Email Sending APIs
 # ---------------------------------------------------------------------------

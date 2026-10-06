@@ -3476,6 +3476,68 @@ document.querySelectorAll('.tab-btn[data-tab="send-emails"]').forEach(btn => {
 
 let currentSenderId = null;
 
+// ---------------------------------------------------------------------------
+// Test Email
+// ---------------------------------------------------------------------------
+
+function testSender(id, email) {
+    currentSenderId = id;
+    $('#test-sender-id').value = id;
+    $('#test-recipient').value = '';
+    $('#test-subject').value = '发送邮箱测试';
+    $('#test-content').value = '';
+    $('#test-email-modal').classList.remove('hidden');
+}
+
+function closeTestEmailModal() {
+    $('#test-email-modal').classList.add('hidden');
+    currentSenderId = null;
+}
+
+async function sendTestEmail(event) {
+    event.preventDefault();
+    
+    const senderId = $('#test-sender-id').value;
+    const recipientEmail = $('#test-recipient').value;
+    const subject = $('#test-subject').value || '发送邮箱测试';
+    const content = $('#test-content').value;
+    
+    const btn = $('#test-send-btn');
+    btn.disabled = true;
+    btn.textContent = '发送中...';
+    
+    try {
+        const res = await fetch(`/api/sender-emails/${senderId}/test`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+                recipient_email: recipientEmail,
+                subject: subject,
+                content: content
+            })
+        });
+        
+        const result = await res.json();
+        
+        if (res.ok) {
+            infoModal(result.message || '测试邮件发送成功！');
+            closeTestEmailModal();
+        } else {
+            infoModal(`发送失败：${result.error}`);
+        }
+        
+    } catch (e) {
+        infoModal(`请求失败：${e.message}`);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '发送测试邮件';
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Sender CRUD
+// ---------------------------------------------------------------------------
+
 async function loadSenders() {
     try {
         const res = await fetch('/api/sender-emails');
@@ -3518,6 +3580,7 @@ async function loadSenders() {
                         <button class="btn small" onclick="toggleSender(${sender.id})">
                             ${sender.is_enabled ? '禁用' : '启用'}
                         </button>
+                        <button class="btn small text" onclick="testSender(${sender.id}, '${escapeHtml(sender.email)}')">测试</button>
                         <button class="btn small text" onclick="editSender(${sender.id})">编辑</button>
                         <button class="btn small text danger" onclick="deleteSender(${sender.id}, '${escapeHtml(sender.email)}')">删除</button>
                     </div>
