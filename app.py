@@ -2620,52 +2620,69 @@ def _build_email_content(salary_data: dict, community: str, name: str) -> str:
     if not valid_fields:
         return '<p>暂无工资数据</p>'
 
-    # 统一样式常量，方便调整
-    TH_STYLE = 'padding: 16px 20px; border: 1px solid #bbb; background-color: #f5f5f5; white-space: nowrap; font-size: 20px; font-weight: 600; color: #333;'
-    TD_NORMAL = 'padding: 16px 20px; border: 1px solid #bbb; white-space: nowrap; font-size: 20px;'
+    # ============================================================
+    # 邮件客户端（尤其 QQ 邮箱）会过滤 td 上的 font-size，
+    # 必须用三重保险：
+    #   1) table 根元素设 font-size 作为继承基准
+    #   2) 每个 td/th 内用 <span> 包裹并加 font-size !important
+    #   3) td/th 自身也声明 font-size
+    # ============================================================
+    FONT_SIZE = '20px'
+    FONT_STACK = "-apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', Arial, sans-serif"
     
-    # 构建表头和数据行
-    headers_html = ''.join(f'<th style="{TH_STYLE}">{html.escape(key)}</th>' for key, _ in valid_fields)
+    def wrap_text(text, extra_style=''):
+        """用 span 包裹文本，确保字体大小不被邮件客户端覆盖。"""
+        span_style = f'font-size: {FONT_SIZE} !important; font-family: {FONT_STACK}; {extra_style}'
+        return f'<span style="{span_style}">{text}</span>'
+
+    th_base = f'padding: 14px 18px; border: 1px solid #bbb; background-color: #f0f0f0; white-space: nowrap; font-weight: 700; text-align: center; font-size: {FONT_SIZE}; font-family: {FONT_STACK};'
+    td_base = f'padding: 14px 18px; border: 1px solid #bbb; white-space: nowrap; text-align: center; font-size: {FONT_SIZE}; font-family: {FONT_STACK};'
     
+    # 构建表头
+    headers_html = ''
+    for key, _ in valid_fields:
+        headers_html += f'<th style="{th_base}">{wrap_text(html.escape(key))}</th>'
+    
+    # 构建数据行
     cells_html = ''
     for key, value in valid_fields:
         is_highlight = key in highlight_fields
         
         if is_highlight:
-            # 判断是应发、扣款还是实发
             if '应发' in key or 'gross' in key.lower():
                 color = '#2e7d32'
-                bg_color = ''
-                font_weight = 'bold'
+                bg = ''
             elif '扣款' in key or 'deduction' in key.lower():
                 color = '#c62828'
-                bg_color = ''
-                font_weight = 'bold'
+                bg = ''
             elif '实发' in key or 'net' in key.lower():
                 color = '#1b5e20'
-                bg_color = 'background-color: #e8f5e9;'
-                font_weight = 'bold'
+                bg = 'background-color: #e8f5e9;'
             else:
                 color = '#333'
-                bg_color = ''
-                font_weight = 'bold'
+                bg = ''
             
-            td_style = f'style="{TD_NORMAL} {bg_color} color: {color}; font-weight: {font_weight};"'
-            cells_html += f'<td {td_style}>¥{html.escape(value)}</td>'
+            td_style = f'{td_base} {bg} color: {color}; font-weight: 700;'
+            cells_html += f'<td style="{td_style}">{wrap_text("¥" + html.escape(value), f"color: {color}; font-weight: 700;")}</td>'
         else:
-            cells_html += f'<td style="{TD_NORMAL}">{html.escape(value)}</td>'
+            cells_html += f'<td style="{td_base}">{wrap_text(html.escape(value))}</td>'
     
     html_content = f"""
-    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; max-width: 100%; margin: 0 auto; overflow-x: auto; line-height: 1.6;">
-        <h2 style="color: #333; font-size: 24px; margin-bottom: 16px;">{html.escape(community)} - {html.escape(name)} 工资单</h2>
-        <table style="width: 100%; border-collapse: collapse; margin-top: 16px;">
+    <!DOCTYPE html>
+    <html><head><meta charset="utf-8"></head><body style="margin:0;padding:0;">
+    <div style="font-family: {FONT_STACK}; font-size: {FONT_SIZE}; line-height: 1.6; max-width: 100%;">
+        <h2 style="color: #333; font-size: 26px !important; font-weight: 700; margin: 0 0 18px 0; font-family: {FONT_STACK};">
+            {html.escape(community)} · {html.escape(name)} 工资单
+        </h2>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 14px; font-size: {FONT_SIZE}; font-family: {FONT_STACK};">
             <tr>{headers_html}</tr>
             <tr>{cells_html}</tr>
         </table>
-        <p style="margin-top: 24px; color: #666; font-size: 16px;">
+        <p style="margin-top: 24px; color: #666; font-size: 16px !important; font-family: {FONT_STACK};">
             此邮件由系统自动发送，请勿直接回复。
         </p>
     </div>
+    </body></html>
     """
     return html_content
 
