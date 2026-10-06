@@ -3380,6 +3380,25 @@ async function showImportDetail(importId) {
                     const personId = parseInt(btn.dataset.resendPerson);
                     if (!personId || btn.disabled) return;
                     
+                    // 查找对应记录，判断是否已发送过
+                    const tr = btn.closest('tr');
+                    const row = records.find(r => r.person_id === personId);
+                    const hasSentBefore = row && row.email_sent_at;
+                    
+                    // 根据是否已发送过，显示不同提示
+                    let confirmMsg;
+                    if (hasSentBefore) {
+                        const senderInfo = row.sender_email ? `（发件人: ${row.sender_email}）` : '';
+                        const timeInfo = row.email_sent_at ? `\n上次发送时间: ${formatSendTime(row.email_sent_at)}` : '';
+                        confirmMsg = `该工资单已发送过${senderInfo}${timeInfo}\n\n是否重发？`;
+                    } else {
+                        const nameInfo = row ? `${row.community} - ${row.name}` : '';
+                        confirmMsg = `确定要向 ${nameInfo}\n${row.email || ''}\n发送工资单邮件吗？`;
+                    }
+                    
+                    const confirmed = await confirmModal(confirmMsg);
+                    if (!confirmed) return;
+                    
                     btn.disabled = true;
                     btn.textContent = '发送中...';
                     
