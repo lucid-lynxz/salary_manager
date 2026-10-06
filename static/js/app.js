@@ -3404,11 +3404,27 @@ async function showImportDetail(importId) {
             body.querySelectorAll('[data-resend-person]').forEach(btn => {
                 btn.addEventListener('click', async () => {
                     const personId = parseInt(btn.dataset.resendPerson);
-                    if (!personId || btn.disabled) return;
+                    if (!personId) return;
+                    
+                    // 检查邮箱是否存在
+                    const row = records.find(r => r.person_id === personId);
+                    const hasEmail = row && row.email && row.email.trim();
+                    
+                    if (!hasEmail) {
+                        // 邮箱缺失，提示并进入编辑模式
+                        const confirmed = await confirmModal('邮箱缺失，请先配置\n\n点击"确认"进入编辑模式');
+                        if (!confirmed) return;
+                        
+                        // 找到对应的邮箱单元格并进入编辑模式
+                        const emailCell = body.querySelector(`.email-cell[data-person-id="${personId}"]`);
+                        if (emailCell) {
+                            startEmailEdit(emailCell);
+                        }
+                        return;
+                    }
                     
                     // 查找对应记录，判断是否已发送过
                     const tr = btn.closest('tr');
-                    const row = records.find(r => r.person_id === personId);
                     const hasSentBefore = row && row.email_sent_at;
                     
                     // 根据是否已发送过，显示不同提示
