@@ -2684,15 +2684,15 @@ def _build_email_content(salary_data: dict, community: str, name: str) -> str:
     <!DOCTYPE html>
     <html><head><meta charset="utf-8"></head>
     <body style="margin:0;padding:0;">
-        <h2 style="color:#333;font-size:26px;font-weight:700;margin:0 0 18px 0;font-family:{FONT_ATTR};">
-            <font size="7" face="{FONT_ATTR}">{html.escape(community)} · {html.escape(name)} 工资单</font>
+        <h2 style="color:#333;font-size:18px;font-weight:700;margin:0 0 14px 0;font-family:{FONT_ATTR};">
+            <font size="5" face="{FONT_ATTR}">{html.escape(community)} · {html.escape(name)} 工资单</font>
         </h2>
-        <table style="width:100%;border-collapse:collapse;margin-top:14px;font-size:{FONT_SIZE_PT};font-family:{FONT_ATTR};">
+        <table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:{FONT_SIZE_PT};font-family:{FONT_ATTR};">
             <tr>{headers_html}</tr>
             <tr>{cells_html}</tr>
         </table>
         <p style="margin-top:24px;color:#666;font-family:{FONT_ATTR};">
-            <font size="4" face="{FONT_ATTR}">此邮件由系统自动发送，请勿直接回复。</font>
+            <font size="2" face="{FONT_ATTR}">此邮件由系统自动发送，请勿直接回复。</font>
         </p>
     </body></html>
     """
