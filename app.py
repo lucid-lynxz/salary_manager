@@ -2592,36 +2592,42 @@ def api_import_send(import_id):
 
 
 def _build_email_content(salary_data: dict, community: str, name: str) -> str:
-    """构建工资单邮件HTML内容，动态显示所有工资表字段。"""
-    # 定义需要高亮显示的汇总字段（保持原有样式）
+    """构建工资单邮件HTML内容，动态显示所有工资表字段（横向表格）。"""
+    # 定义需要高亮显示的汇总字段
     highlight_fields = {'应发合计', '扣款合计', '实发合计', 'gross_salary', 'total_deduction', 'net_salary'}
     
     # 定义不需要在邮件中显示的字段
     skip_fields = {'序号', '姓名', '社区', 'row_number'}
     
-    # 构建表格行
-    rows_html = ""
+    # 收集所有有效字段
+    valid_fields = []
     for key, value in salary_data.items():
-        # 跳过内部字段、空值和不需要显示的字段
         if key.startswith('_') or value is None or value == '' or key in skip_fields:
             continue
-        
-        # 格式化金额显示
-        display_value = str(value)
+        valid_fields.append((key, str(value)))
+    
+    if not valid_fields:
+        return '<p>暂无工资数据</p>'
+    
+    # 构建表头和数据行
+    headers_html = ''.join(f'<th style="padding: 8px 12px; border: 1px solid #ddd; background-color: #f5f5f5; white-space: nowrap;">{html.escape(key)}</th>' for key, _ in valid_fields)
+    
+    cells_html = ''
+    for key, value in valid_fields:
         is_highlight = key in highlight_fields
         
         if is_highlight:
             # 判断是应发、扣款还是实发
             if '应发' in key or 'gross' in key.lower():
-                color = '#2e7d32'  # 绿色
+                color = '#2e7d32'
                 bg_color = ''
                 font_weight = 'normal'
             elif '扣款' in key or 'deduction' in key.lower():
-                color = '#c62828'  # 红色
+                color = '#c62828'
                 bg_color = ''
                 font_weight = 'normal'
             elif '实发' in key or 'net' in key.lower():
-                color = '#1b5e20'  # 深绿色
+                color = '#1b5e20'
                 bg_color = 'background-color: #e8f5e9;'
                 font_weight = 'bold'
             else:
@@ -2629,30 +2635,17 @@ def _build_email_content(salary_data: dict, community: str, name: str) -> str:
                 bg_color = ''
                 font_weight = 'normal'
             
-            row_style = f'style="{bg_color}"' if bg_color else ''
-            td_style = f'style="padding: 10px; border: 1px solid #ddd; color: {color}; font-weight: {font_weight};"'
-            rows_html += f"""
-            <tr {row_style}>
-                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">{html.escape(key)}</td>
-                <td {td_style}>¥{html.escape(display_value)}</td>
-            </tr>"""
+            td_style = f'style="padding: 8px 12px; border: 1px solid #ddd; {bg_color} color: {color}; font-weight: {font_weight}; white-space: nowrap;"'
+            cells_html += f'<td {td_style}>¥{html.escape(value)}</td>'
         else:
-            # 普通字段
-            rows_html += f"""
-            <tr>
-                <td style="padding: 10px; border: 1px solid #ddd;">{html.escape(key)}</td>
-                <td style="padding: 10px; border: 1px solid #ddd;">{html.escape(display_value)}</td>
-            </tr>"""
+            cells_html += f'<td style="padding: 8px 12px; border: 1px solid #ddd; white-space: nowrap;">{html.escape(value)}</td>'
     
     html_content = f"""
-    <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto;">
+    <div style="font-family: Arial, sans-serif; max-width: 100%; margin: 0 auto; overflow-x: auto;">
         <h2 style="color: #333;">{html.escape(community)} - {html.escape(name)} 工资单</h2>
         <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
-            <tr style="background-color: #f5f5f5;">
-                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">项目</td>
-                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">金额/内容</td>
-            </tr>
-            {rows_html}
+            <tr>{headers_html}</tr>
+            <tr>{cells_html}</tr>
         </table>
         <p style="margin-top: 20px; color: #666; font-size: 14px;">
             此邮件由系统自动发送，请勿直接回复。<br>
