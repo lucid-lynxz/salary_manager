@@ -2621,8 +2621,8 @@ def _build_email_content(salary_data: dict, community: str, name: str) -> str:
         return '<p>暂无工资数据</p>'
 
     # 统一样式常量，方便调整
-    TH_STYLE = 'padding: 14px 18px; border: 1px solid #bbb; background-color: #f5f5f5; white-space: nowrap; font-size: 16px; font-weight: 600; color: #333;'
-    TD_NORMAL = 'padding: 14px 18px; border: 1px solid #bbb; white-space: nowrap; font-size: 16px;'
+    TH_STYLE = 'padding: 16px 20px; border: 1px solid #bbb; background-color: #f5f5f5; white-space: nowrap; font-size: 20px; font-weight: 600; color: #333;'
+    TD_NORMAL = 'padding: 16px 20px; border: 1px solid #bbb; white-space: nowrap; font-size: 20px;'
     
     # 构建表头和数据行
     headers_html = ''.join(f'<th style="{TH_STYLE}">{html.escape(key)}</th>' for key, _ in valid_fields)
@@ -2657,12 +2657,12 @@ def _build_email_content(salary_data: dict, community: str, name: str) -> str:
     
     html_content = f"""
     <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', Arial, sans-serif; max-width: 100%; margin: 0 auto; overflow-x: auto; line-height: 1.6;">
-        <h2 style="color: #333; font-size: 22px; margin-bottom: 16px;">{html.escape(community)} - {html.escape(name)} 工资单</h2>
+        <h2 style="color: #333; font-size: 24px; margin-bottom: 16px;">{html.escape(community)} - {html.escape(name)} 工资单</h2>
         <table style="width: 100%; border-collapse: collapse; margin-top: 16px;">
             <tr>{headers_html}</tr>
             <tr>{cells_html}</tr>
         </table>
-        <p style="margin-top: 24px; color: #666; font-size: 15px;">
+        <p style="margin-top: 24px; color: #666; font-size: 16px;">
             此邮件由系统自动发送，请勿直接回复。
         </p>
     </div>
