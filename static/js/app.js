@@ -3566,7 +3566,7 @@ async function loadSenders() {
                 <div class="sender-card ${statusClass}">
                     <div class="sender-card-header">
                         <div class="sender-email">${displayName}</div>
-                        <div class="sender-status-badge ${statusClass}">${statusText}</div>
+                        <button class="sender-status-badge ${statusClass}" onclick="toggleSender(${sender.id})" title="点击${sender.is_enabled ? '禁用' : '启用'}">${statusText}</button>
                     </div>
                     <div class="sender-card-body">
                         <div class="sender-info">
@@ -3583,9 +3583,6 @@ async function loadSenders() {
                         </div>
                     </div>
                     <div class="sender-card-actions">
-                        <button class="btn small" onclick="toggleSender(${sender.id})">
-                            ${sender.is_enabled ? '禁用' : '启用'}
-                        </button>
                         <button class="btn small text" onclick="testSender(${sender.id}, '${escapeHtml(sender.email)}')">测试</button>
                         <button class="btn small text" onclick="editSender(${sender.id})">编辑</button>
                         <button class="btn small text danger" onclick="deleteSender(${sender.id}, '${escapeHtml(sender.email)}')">删除</button>
@@ -3704,7 +3701,6 @@ async function toggleSender(id) {
         const result = await res.json();
         if (!res.ok) throw new Error(result.error || '操作失败');
         
-        infoModal(result.message);
         loadSenders();
         
     } catch (e) {
