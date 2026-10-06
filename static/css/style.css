@@ -1058,6 +1058,27 @@ html[data-theme="dark"] .import-detail-modal .modal-content { background: #1e293
     margin-top: 16px;
 }
 
+/* 人员查询明细表格列冻结 */
+.search-results-table th.freeze-1,
+.search-results-table td.freeze-1 {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    background: inherit;
+}
+.search-results-table thead th.freeze-1 { z-index: 3; }
+.search-results-table td.freeze-1 { box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.15); }
+
+.search-results-table th.freeze-2,
+.search-results-table td.freeze-2 {
+    position: sticky;
+    left: 60px;
+    z-index: 2;
+    background: inherit;
+}
+.search-results-table thead th.freeze-2 { z-index: 3; }
+.search-results-table td.freeze-2 { box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.15); }
+
 .search-results-table {
     width: 100%;
     border-collapse: collapse;
@@ -1197,6 +1218,12 @@ html[data-theme="dark"] .detail-table th { background: #334155; }
 html[data-theme="dark"] .search-results-table { background: #1e293b; }
 html[data-theme="dark"] .search-results-table td { background: #1e293b; color: var(--text); border-color: #334155; }
 html[data-theme="dark"] .search-results-table tbody tr:hover { background: #273449; }
+html[data-theme="dark"] .search-results-table th.freeze-1,
+html[data-theme="dark"] .search-results-table td.freeze-1 { background: #1e293b; }
+html[data-theme="dark"] .search-results-table thead th.freeze-1 { background: #334155; }
+html[data-theme="dark"] .search-results-table th.freeze-2,
+html[data-theme="dark"] .search-results-table td.freeze-2 { background: #1e293b; }
+html[data-theme="dark"] .search-results-table thead th.freeze-2 { background: #334155; }
 html[data-theme="dark"] .table-wrap th,
 html[data-theme="dark"] .table-wrap td { background: #1e293b; color: var(--text); }
 html[data-theme="dark"] .table-wrap thead th,

@@ -2797,6 +2797,18 @@ async function showPersonDetail(id, year, month) {
             if (i === nameIdx) return 'freeze-2';
             return '';
         };
+        
+        // 格式化日期时间，去掉 00:00:00
+        function formatDateTime(value) {
+            if (!value) return '';
+            const str = String(value);
+            // 如果包含时间部分且为 00:00:00，只显示日期
+            if (str.includes(' 00:00:00')) {
+                return str.split(' ')[0];
+            }
+            return str;
+        }
+        
         html += `<table class="search-results-table"><thead><tr>`;
         detailCols.forEach((col, i) => {
             const cls = freezeClass(i);
@@ -2808,7 +2820,8 @@ async function showPersonDetail(id, year, month) {
             detailCols.forEach((col, i) => {
                 const cls = freezeClass(i);
                 const v = (h.detail || {})[col];
-                html += `<td${cls ? ` class="${cls}"` : ''}>${escapeHtml(v == null ? '' : String(v))}</td>`;
+                const formatted = formatDateTime(v);
+                html += `<td${cls ? ` class="${cls}"` : ''}>${escapeHtml(formatted == null ? '' : String(formatted))}</td>`;
             });
             html += `<td>${h.year}年${h.month}月</td><td>${escapeHtml(r.email || '-')}</td></tr>`;
         });
