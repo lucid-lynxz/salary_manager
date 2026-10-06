@@ -2632,7 +2632,7 @@ def _build_email_content(salary_data: dict, community: str, name: str) -> str:
     # ============================================================
     FONT_SIZE_PT = '16pt'           # 邮件客户端认 pt
     FONT_SIZE_PX = '20px'
-    FONT_SIZE_ATTR = '6'            # <font size="6"> ≈ 24px
+    FONT_SIZE_ATTR = '7'            # <font size="7"> 最大号，QQ邮箱实测生效
     FONT_ATTR = 'Microsoft YaHei'   # face 属性不用引号
     
     def wrap_text(text):
