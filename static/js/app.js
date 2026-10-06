@@ -2984,10 +2984,10 @@ async function handleImportSend(importId, year, month) {
             
             if (choice === 'all') {
                 // 全部重发
-                await executeImportSend(importId, 'all', year, month);
+                await executeImportSend(importId, 'all', year, month, false);
             } else if (choice === 'failed') {
                 // 仅失败重发
-                await executeImportSend(importId, 'failed', year, month);
+                await executeImportSend(importId, 'failed', year, month, false);
             }
             // choice === 'cancel' 则不做任何操作
             
@@ -2998,7 +2998,7 @@ async function handleImportSend(importId, year, month) {
             
             const confirmed = await confirmModal(message, true);
             if (confirmed) {
-                await executeImportSend(importId, 'all', year, month);
+                await executeImportSend(importId, 'all', year, month, true);
             }
         }
         
@@ -3054,9 +3054,19 @@ function showResendConfirmDialog(message) {
     });
 }
 
-async function executeImportSend(importId, mode, year, month) {
-    const modeText = mode === 'failed' ? '失败重发' : '全部重发';
-    infoModal(`正在${modeText} ${year}年${month}月工资单，请稍候...`);
+async function executeImportSend(importId, mode, year, month, isFirstSend) {
+    // 构建提示文案
+    let actionText;
+    if (isFirstSend) {
+        actionText = `正在发送 ${year}年${month}月工资单`;
+    } else if (mode === 'failed') {
+        actionText = `正在重发失败的工资单 (${year}年${month}月)`;
+    } else {
+        actionText = `正在全部重发 ${year}年${month}月工资单`;
+    }
+    
+    // 显示进度对话框（带进度条）
+    const progressDialog = showProgressDialog(actionText);
     
     try {
         const res = await fetch(`/api/import/${importId}/send`, {
@@ -3067,16 +3077,128 @@ async function executeImportSend(importId, mode, year, month) {
         
         const data = await res.json();
         
+        progressDialog.close();
+        
         if (data.error) {
             infoModal(`发送失败: ${data.error}`);
         } else {
-            const successMsg = `发送完成！<br>成功: ${data.success_count} 条<br>失败: ${data.failed_count} 条`;
-            infoModal(successMsg, true);
+            // 显示结果对话框
+            await showSendResultDialog(data, year, month, importId);
             // 刷新历史列表以更新进度
             loadHistory();
         }
     } catch (e) {
+        progressDialog.close();
         infoModal(`发送异常: ${e.message}`);
+    }
+}
+
+function showProgressDialog(message) {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 400px;">
+            <div class="modal-body" style="padding: 30px; text-align: center;">
+                <p style="margin-bottom: 20px; font-size: 15px;">${message}</p>
+                <div class="progress-bar-container">
+                    <div class="progress-bar" id="send-progress-bar" style="width: 0%"></div>
+                </div>
+                <p id="send-progress-text" style="margin-top: 10px; color: var(--muted); font-size: 13px;">请稍候...</p>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+    
+    return {
+        close: () => modal.remove(),
+        updateProgress: (current, total, personInfo) => {
+            const bar = modal.querySelector('#send-progress-bar');
+            const text = modal.querySelector('#send-progress-text');
+            if (bar && total > 0) {
+                const pct = Math.round((current / total) * 100);
+                bar.style.width = `${pct}%`;
+            }
+            if (text && personInfo) {
+                text.textContent = `${current}/${total} - ${personInfo}`;
+            }
+        }
+    };
+}
+
+async function showSendResultDialog(data, year, month, importId) {
+    const hasFailures = data.failed_count > 0;
+    
+    let message = `<strong>${year}年${month}月工资单发送完成！</strong><br><br>`;
+    message += `成功: ${data.success_count} 条<br>`;
+    if (hasFailures) {
+        message += `失败: ${data.failed_count} 条`;
+    }
+    
+    // 如果有失败记录，列出失败详情
+    if (hasFailures && data.results) {
+        const failedResults = data.results.filter(r => !r.success);
+        if (failedResults.length > 0) {
+            message += `<br><br><div style="text-align: left; max-height: 200px; overflow-y: auto; border: 1px solid var(--border); padding: 10px; border-radius: 4px;">`;
+            message += `<strong style="color: var(--danger);">失败详情：</strong><br>`;
+            failedResults.slice(0, 10).forEach((r, idx) => {
+                const personInfo = r.person_name ? `${r.community || ''}${r.person_name}` : `人员#${r.person_id}`;
+                message += `${idx + 1}. ${escapeHtml(personInfo)} - ${escapeHtml(r.error || '未知错误')}<br>`;
+            });
+            if (failedResults.length > 10) {
+                message += `... 还有 ${failedResults.length - 10} 条失败记录`;
+            }
+            message += `</div>`;
+        }
+    }
+    
+    // 根据是否有失败记录，显示不同按钮
+    if (hasFailures) {
+        // 有失败：显示"确认"和"失败重发"按钮
+        const choice = await new Promise((resolve) => {
+            const modal = document.createElement('div');
+            modal.className = 'modal';
+            modal.innerHTML = `
+                <div class="modal-content" style="max-width: 500px;">
+                    <div class="modal-header">
+                        <h3>发送结果</h3>
+                        <button class="close-btn" onclick="this.closest('.modal').remove()">×</button>
+                    </div>
+                    <div class="modal-body" style="padding: 20px;">
+                        <p>${message}</p>
+                    </div>
+                    <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end; padding: 16px 20px; border-top: 1px solid var(--border);">
+                        <button class="btn" id="result-confirm-btn">确认</button>
+                        <button class="btn danger" id="result-resend-failed-btn">失败重发</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+            
+            modal.querySelector('#result-confirm-btn').addEventListener('click', () => {
+                modal.remove();
+                resolve('confirm');
+            });
+            
+            modal.querySelector('#result-resend-failed-btn').addEventListener('click', () => {
+                modal.remove();
+                resolve('resend_failed');
+            });
+            
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.remove();
+                    resolve('confirm');
+                }
+            });
+        });
+        
+        if (choice === 'resend_failed') {
+            // 重新调用发送，仅重发失败的
+            await executeImportSend(importId, 'failed', year, month, false);
+        }
+    } else {
+        // 全部成功：只显示"确认"按钮
+        await infoModal(message, true);
     }
 }
 

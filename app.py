@@ -2436,6 +2436,7 @@ def api_import_send(import_id):
             
             # 构建邮件列表
             emails_to_send = []
+            person_info_map = {}  # person_id -> {community, name}
             for row in persons:
                 data_json = row["data_json"]
                 if data_json:
@@ -2443,6 +2444,11 @@ def api_import_send(import_id):
                         salary_data = json.loads(data_json)
                         subject = f"{imp['year']}年{imp['month']}月工资单"
                         content = _build_email_content(salary_data, row["community"], row["name"])
+                        
+                        person_info_map[row["id"]] = {
+                            "community": row["community"],
+                            "name": row["name"]
+                        }
                         
                         emails_to_send.append({
                             "person_id": row["id"],
@@ -2461,6 +2467,14 @@ def api_import_send(import_id):
             from email_sender import EmailSender
             sender_instance = EmailSender(get_db, decrypt_password)
             result = sender_instance.send_batch_emails(emails_to_send)
+            
+            # 为失败记录附加人员信息
+            if result.get("results"):
+                for r in result["results"]:
+                    pid = r.get("person_id")
+                    if pid and pid in person_info_map:
+                        r["community"] = person_info_map[pid]["community"]
+                        r["person_name"] = person_info_map[pid]["name"]
             
             return jsonify(result), 200
             

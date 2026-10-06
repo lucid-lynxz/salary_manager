@@ -101,7 +101,7 @@ class EmailSender:
         发送单封邮件。
         
         Returns:
-            Dict with keys: success, error, sender_id
+            Dict with keys: success, error, sender_id, person_id
         """
         try:
             # 创建邮件配置
@@ -136,17 +136,17 @@ class EmailSender:
                 # 更新人员状态
                 self._update_person_status(person_id, "success", sender_id=sender["id"])
                 
-                return {"success": True, "error": None, "sender_id": sender["id"]}
+                return {"success": True, "error": None, "sender_id": sender["id"], "person_id": person_id}
             else:
                 error_msg = "发送失败，未知错误"
                 self._update_person_status(person_id, "failed", error_msg=error_msg)
-                return {"success": False, "error": error_msg, "sender_id": sender["id"]}
+                return {"success": False, "error": error_msg, "sender_id": sender["id"], "person_id": person_id}
                 
         except Exception as e:
             error_msg = str(e)
             print(f"[EMAIL SEND ERROR] {error_msg}", file=sys.stderr, flush=True)
             self._update_person_status(person_id, "failed", error_msg=error_msg)
-            return {"success": False, "error": error_msg, "sender_id": sender["id"]}
+            return {"success": False, "error": error_msg, "sender_id": sender["id"], "person_id": person_id}
     
     def send_batch_emails(self, emails_to_send: List[Dict], progress_callback=None) -> Dict:
         """
@@ -253,7 +253,7 @@ class EmailSender:
                 except Exception as e:
                     error_msg = f"线程执行异常: {str(e)}"
                     print(f"[EMAIL BATCH ERROR] {error_msg}", file=sys.stderr, flush=True)
-                    results.append({"success": False, "error": error_msg, "sender_id": None})
+                    results.append({"success": False, "error": error_msg, "sender_id": None, "person_id": email_data.get("person_id")})
                     failed_count += 1
                     
                     if progress_callback:
