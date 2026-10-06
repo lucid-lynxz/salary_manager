@@ -1774,8 +1774,17 @@ function rebuildValidationState() {
     }));
 
     vs.deletedRecords = vs.allRows.filter(r => deleted.has(r.row)).map(resolve);
+    
+    // total 是总行数（不含已删除），不随确认变化
     vs.total = rows.length;
-    vs.invalid = dupEmailRows.size + vs.issues.length;
+    
+    // 计算有效/无效时，排除已确认的行
+    const confirmedSet = new Set(state.email.confirmedRows || []);
+    const unconfirmedDupRows = vs.duplicateGroups.reduce((acc, g) => 
+        acc.concat(g.rows.filter(r => !confirmedSet.has(r.row))), []);
+    const unconfirmedIssues = vs.issues.filter(r => !confirmedSet.has(r.row));
+    
+    vs.invalid = unconfirmedDupRows.length + unconfirmedIssues.length;
     vs.valid = vs.total - vs.invalid;
 }
 
