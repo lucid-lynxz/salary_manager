@@ -1330,13 +1330,13 @@ html[data-theme="dark"] .modal-large {
     border-color: #334155;
 }
 
-/* Tooltip icon */
+/* Tooltip icon - 使用浏览器原生 title 属性 */
 .tooltip-icon {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     width: 16px;
     height: 16px;
-    line-height: 16px;
-    text-align: center;
     background: var(--muted);
     color: white;
     border-radius: 50%;
@@ -1344,58 +1344,7 @@ html[data-theme="dark"] .modal-large {
     font-weight: bold;
     cursor: help;
     margin-left: 4px;
-    position: relative;
     vertical-align: middle;
-}
-
-.tooltip-wrapper {
-    position: relative;
-    display: inline-block;
-    overflow: visible !important;
-}
-
-.tooltip-wrapper .tooltip-text {
-    visibility: hidden;
-    opacity: 0;
-    position: absolute;
-    bottom: calc(100% + 8px);
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 8px 12px;
-    background: #333;
-    color: white;
-    font-size: 12px;
-    font-weight: normal;
-    border-radius: 4px;
-    white-space: nowrap;
-    z-index: 99999;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    transition: opacity 0.2s ease, visibility 0.2s ease;
-    pointer-events: none;
-}
-
-.tooltip-wrapper .tooltip-text::after {
-    content: '';
-    position: absolute;
-    top: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    border: 5px solid transparent;
-    border-top-color: #333;
-}
-
-.tooltip-wrapper:hover .tooltip-text {
-    visibility: visible;
-    opacity: 1;
-}
-
-html[data-theme="dark"] .tooltip-wrapper .tooltip-text {
-    background: #1e293b;
-    border: 1px solid #334155;
-}
-
-html[data-theme="dark"] .tooltip-wrapper .tooltip-text::after {
-    border-top-color: #1e293b;
 }
 
 
