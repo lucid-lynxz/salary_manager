@@ -4061,13 +4061,6 @@ async function loadEmailStatus(importId) {
     }
 }
 
-// Load imports when tab is activated
-document.querySelectorAll('.tab-btn[data-tab="send-emails"]').forEach(btn => {
-    btn.addEventListener('click', () => {
-        setTimeout(loadSendImports, 100);
-    });
-});
-
 // ---------------------------------------------------------------------------
 // Sender Email Management
 // ---------------------------------------------------------------------------
