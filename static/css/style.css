@@ -616,6 +616,32 @@ html[data-theme="dark"] .send-progress-complete {
     color: #4ade80;
 }
 
+/* 导入详情对话框的发送进度摘要 */
+.send-progress-summary {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: -4px;
+    margin-bottom: 16px;
+    font-size: 14px;
+}
+
+.send-progress-summary .progress-text {
+    color: var(--text);
+}
+
+.send-progress-summary .progress-text strong {
+    color: var(--primary);
+}
+
+.send-progress-summary .resend-failed-btn {
+    margin-left: auto;
+}
+
+html[data-theme="dark"] .send-progress-summary .progress-text strong {
+    color: #60a5fa;
+}
+
 html[data-theme="dark"] .send-progress-partial {
     background: #450a0a;
     color: #fca5a5;

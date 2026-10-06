@@ -3256,6 +3256,17 @@ async function showImportDetail(importId) {
             return;
         }
 
+        // 计算发送进度
+        const sentCount = records.filter(rec => rec.email_sent_at && rec.email_send_status === 'success').length;
+        const failedCount = records.filter(rec => rec.email_send_status === 'failed').length;
+        const pendingCount = records.filter(rec => !rec.email_sent_at || (rec.email_send_status !== 'success' && rec.email_send_status !== 'failed')).length;
+        const hasRetryable = failedCount > 0 || pendingCount > 0;
+
+        const progressHtml = `<div class="send-progress-summary">
+            <span class="progress-text">已发送 <strong>${sentCount}/${records.length}</strong></span>
+            ${hasRetryable ? `<button class="btn small danger resend-failed-btn" data-action="resend-failed">失败重发</button>` : ''}
+        </div>`;
+
         // 列顺序完全跟工资表（detailCols）一致，最后加邮箱列
         // 找出社区/姓名在 detailCols 中的索引用于冻结
         const communityIdx = detailCols.indexOf('社区');
@@ -3347,13 +3358,28 @@ async function showImportDetail(importId) {
             const start = (currentPage - 1) * pageSize;
             const pageRecords = records.slice(start, start + pageSize);
 
-            let html = metaHtml;
+            let html = metaHtml + progressHtml;
             html += `<div class="import-detail-wrap" id="import-detail-wrap">
                 <table class="import-detail-table">${theadHtml}<tbody>
                     ${pageRecords.map(rowHtml).join('')}
                 </tbody></table></div>`;
             html += pagerHtml();
             body.innerHTML = html;
+
+            // 绑定失败重发按钮
+            const resendBtn = body.querySelector('.resend-failed-btn');
+            if (resendBtn) {
+                resendBtn.addEventListener('click', async () => {
+                    const confirmed = await confirmModal(`确定要重新发送失败的工资单吗？\n\n将重发 ${failedCount + pendingCount} 条记录（失败 ${failedCount} 条，待发送 ${pendingCount} 条）`);
+                    if (!confirmed) return;
+                    
+                    // 关闭详情对话框
+                    hide($('#modal'));
+                    
+                    // 执行批量重发
+                    executeImportSend(importId, 'failed', r.year, r.month, false);
+                });
+            }
 
             // 绑定分页事件
             body.querySelectorAll('.page-btn[data-page]').forEach(btn => {
