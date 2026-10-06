@@ -649,6 +649,21 @@ html[data-theme="dark"] .send-progress-partial {
     color: var(--muted);
 }
 
+/* 纯文本关闭按钮：无边框无背景 */
+.close-btn.plain {
+    background: none;
+    border: none;
+    padding: 0;
+    width: auto;
+    height: auto;
+    line-height: 1;
+    font-size: 20px;
+}
+
+.close-btn.plain:hover {
+    color: var(--text);
+}
+
 /* 自定义确认弹框：居中显示，替代原生 confirm */
 .confirm-modal-overlay {
     position: fixed;

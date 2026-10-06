@@ -3020,12 +3020,12 @@ function showResendConfirmDialog(message, failedCount, pendingCount) {
             buttonsHtml = `
                 <button class="btn" id="resend-cancel-btn">取消</button>
                 <button class="btn primary" id="resend-failed-btn">失败重发</button>
-                <button class="btn danger" id="resend-all-btn">全部重发</button>
+                <button class="btn primary" id="resend-all-btn">全部重发</button>
             `;
         } else {
             buttonsHtml = `
                 <button class="btn" id="resend-cancel-btn">取消</button>
-                <button class="btn danger" id="resend-all-btn">全部重发</button>
+                <button class="btn primary" id="resend-all-btn">全部重发</button>
             `;
         }
         
@@ -3033,7 +3033,7 @@ function showResendConfirmDialog(message, failedCount, pendingCount) {
             <div class="modal-content" style="max-width: 450px;">
                 <div class="modal-header">
                     <h3>工资单发送确认</h3>
-                    <button class="close-btn" onclick="this.closest('.modal').remove()">×</button>
+                    <button class="close-btn plain" onclick="this.closest('.modal').remove()">✕</button>
                 </div>
                 <div class="modal-body" style="padding: 20px;">
                     <p>${message}</p>
