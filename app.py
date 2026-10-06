@@ -1486,7 +1486,68 @@ def api_imports():
         rows = conn.execute(
             "SELECT id, year, month, salary_filename, email_filename, imported_at FROM salary_imports ORDER BY year DESC, month DESC"
         ).fetchall()
-    return jsonify([dict(r) for r in rows])
+    
+    result = []
+    for r in rows:
+        import_id = r["id"]
+        # 获取发送统计
+        stats = conn.execute("""
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN email_send_status = 'sent' THEN 1 ELSE 0 END) as sent,
+                SUM(CASE WHEN email_send_status = 'failed' THEN 1 ELSE 0 END) as failed,
+                SUM(CASE WHEN email_send_status = 'pending' THEN 1 ELSE 0 END) as pending
+            FROM persons WHERE import_id = ?
+        """, (import_id,)).fetchone()
+        
+        result.append({
+            **dict(r),
+            "total": stats["total"],
+            "sent": stats["sent"],
+            "failed": stats["failed"],
+            "pending": stats["pending"]
+        })
+    
+    return jsonify(result)
+
+
+@app.route("/api/check-senders", methods=["GET"])
+def api_check_senders():
+    """检查是否有已启用的发件人邮箱。"""
+    with get_db() as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) as cnt FROM sender_emails WHERE is_enabled = 1"
+        ).fetchone()["cnt"]
+    return jsonify({"has_senders": count > 0, "count": count})
+
+
+@app.route("/api/import/<int:import_id>/send-details", methods=["GET"])
+def api_import_send_details(import_id):
+    """获取导入批次的发送详情（用于确认对话框）。"""
+    with get_db() as conn:
+        # 检查是否已发送过
+        sent_count = conn.execute(
+            "SELECT COUNT(*) as cnt FROM persons WHERE import_id = ? AND email_send_status = 'sent'",
+            (import_id,)
+        ).fetchone()["cnt"]
+        
+        # 统计总数、无邮箱数、失败数
+        stats = conn.execute("""
+            SELECT 
+                COUNT(*) as total,
+                SUM(CASE WHEN email IS NULL OR email = '' THEN 1 ELSE 0 END) as no_email,
+                SUM(CASE WHEN email_send_status = 'failed' THEN 1 ELSE 0 END) as failed,
+                SUM(CASE WHEN email_send_status = 'pending' THEN 1 ELSE 0 END) as pending
+            FROM persons WHERE import_id = ?
+        """, (import_id,)).fetchone()
+        
+        return jsonify({
+            "total": stats["total"],
+            "no_email": stats["no_email"],
+            "sent": sent_count,
+            "failed": stats["failed"],
+            "pending": stats["pending"]
+        })
 
 
 @app.route("/api/import/<int:import_id>", methods=["DELETE"])
@@ -2325,6 +2386,124 @@ def api_send_salary_emails():
     except Exception as e:
         print(f"[SEND BATCH ERROR] Error: {e}", file=sys.stderr, flush=True)
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/import/<int:import_id>/send", methods=["POST"])
+def api_import_send(import_id):
+    """从导入历史触发批量发送工资单邮件。"""
+    try:
+        data = request.get_json() or {}
+        mode = data.get("mode", "all")  # 'all' 或 'failed'
+        
+        with get_db() as conn:
+            # 检查导入记录是否存在
+            imp = conn.execute(
+                "SELECT id, year, month FROM salary_imports WHERE id = ?",
+                (import_id,)
+            ).fetchone()
+            if not imp:
+                return jsonify({"error": "导入记录不存在"}), 404
+            
+            # 检查是否有已启用的发件人
+            sender_count = conn.execute(
+                "SELECT COUNT(*) as cnt FROM sender_emails WHERE is_enabled = 1"
+            ).fetchone()["cnt"]
+            if sender_count == 0:
+                return jsonify({"error": "没有可用的发件人邮箱，请先配置发件人"}), 400
+            
+            # 根据模式获取待发送人员
+            if mode == "failed":
+                # 仅重发失败的
+                persons = conn.execute("""
+                    SELECT p.id, p.community, p.name, p.email, sr.data_json
+                    FROM persons p
+                    LEFT JOIN salary_records sr ON sr.person_id = p.id AND sr.import_id = p.import_id
+                    WHERE p.import_id = ? AND p.email_send_status = 'failed' AND p.email IS NOT NULL AND p.email != ''
+                    ORDER BY p.id
+                """, (import_id,)).fetchall()
+            else:
+                # 全部重发（包括pending和已发送的）
+                persons = conn.execute("""
+                    SELECT p.id, p.community, p.name, p.email, sr.data_json
+                    FROM persons p
+                    LEFT JOIN salary_records sr ON sr.person_id = p.id AND sr.import_id = p.import_id
+                    WHERE p.import_id = ? AND p.email IS NOT NULL AND p.email != ''
+                    ORDER BY p.id
+                """, (import_id,)).fetchall()
+            
+            if not persons:
+                return jsonify({"error": "没有可发送的人员"}), 400
+            
+            # 构建邮件列表
+            emails_to_send = []
+            for row in persons:
+                data_json = row["data_json"]
+                if data_json:
+                    try:
+                        salary_data = json.loads(data_json)
+                        subject = f"{imp['year']}年{imp['month']}月工资单"
+                        content = _build_email_content(salary_data, row["community"], row["name"])
+                        
+                        emails_to_send.append({
+                            "person_id": row["id"],
+                            "email": row["email"],
+                            "subject": subject,
+                            "content": content
+                        })
+                    except Exception as e:
+                        print(f"[IMPORT SEND ERROR] 构建邮件失败 person_id={row['id']}: {e}", 
+                              file=sys.stderr, flush=True)
+            
+            if not emails_to_send:
+                return jsonify({"error": "没有可发送的邮件"}), 400
+            
+            # 调用EmailSender发送
+            from email_sender import EmailSender
+            sender_instance = EmailSender(get_db, decrypt_password)
+            result = sender_instance.send_batch_emails(emails_to_send)
+            
+            return jsonify(result), 200
+            
+    except Exception as e:
+        print(f"[IMPORT SEND ERROR] Error: {e}", file=sys.stderr, flush=True)
+        return jsonify({"error": str(e)}), 500
+
+
+def _build_email_content(salary_data: dict, community: str, name: str) -> str:
+    """构建工资单邮件HTML内容。"""
+    # 提取关键数据
+    gross = salary_data.get('应发合计', salary_data.get('gross_salary', '-'))
+    deduction = salary_data.get('扣款合计', salary_data.get('total_deduction', '-'))
+    net = salary_data.get('实发合计', salary_data.get('net_salary', '-'))
+    
+    html = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">{community} - {name} 工资单</h2>
+        <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
+            <tr style="background-color: #f5f5f5;">
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">项目</td>
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">金额</td>
+            </tr>
+            <tr>
+                <td style="padding: 10px; border: 1px solid #ddd;">应发合计</td>
+                <td style="padding: 10px; border: 1px solid #ddd; color: #2e7d32;">¥{gross}</td>
+            </tr>
+            <tr>
+                <td style="padding: 10px; border: 1px solid #ddd;">扣款合计</td>
+                <td style="padding: 10px; border: 1px solid #ddd; color: #c62828;">¥{deduction}</td>
+            </tr>
+            <tr style="background-color: #e8f5e9;">
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">实发合计</td>
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold; color: #1b5e20; font-size: 18px;">¥{net}</td>
+            </tr>
+        </table>
+        <p style="margin-top: 20px; color: #666; font-size: 14px;">
+            此邮件由系统自动发送，请勿直接回复。<br>
+            如有疑问请联系财务部门。
+        </p>
+    </div>
+    """
+    return html
 
 
 @app.route("/api/email-send-status", methods=["GET"])

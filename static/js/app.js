@@ -2823,18 +2823,41 @@ async function loadHistory() {
         const div = document.createElement('div');
         div.className = 'history-item';
         div.title = '双击查看本次导入的完整数据表';
+        
+        // 构建发送进度文本
+        let sendProgressHtml = '';
+        if (item.total > 0) {
+            const progressText = `已发送: ${item.sent}/${item.total}`;
+            let progressClass = 'send-progress';
+            if (item.sent === item.total && item.total > 0) {
+                progressClass += ' send-progress-complete';
+            } else if (item.failed > 0) {
+                progressClass += ' send-progress-partial';
+            }
+            sendProgressHtml = `<span class="${progressClass}">${progressText}</span>`;
+        }
+        
         div.innerHTML = `
             <div>
                 <strong>${item.year}年${item.month}月</strong>
+                ${sendProgressHtml}
                 <div style="font-size:12px;color:var(--muted);margin-top:4px;">
                     工资：${escapeHtml(item.salary_filename || '-')} | 邮箱：${escapeHtml(item.email_filename || '-')} | ${new Date(item.imported_at).toLocaleString()}
                 </div>
             </div>
             <div style="display:flex;gap:8px;">
+                <button class="btn primary" data-send-id="${item.id}" data-year="${item.year}" data-month="${item.month}">发送</button>
                 <button class="btn primary" data-export-id="${item.id}" data-year="${item.year}" data-month="${item.month}">导出</button>
                 <button class="btn danger" data-delete-id="${item.id}">删除</button>
             </div>
         `;
+        
+        // 绑定发送按钮
+        const sendBtn = div.querySelector('[data-send-id]');
+        sendBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            await handleImportSend(item.id, item.year, item.month);
+        });
         
         // 绑定导出按钮
         const exportBtn = div.querySelector('[data-export-id]');
@@ -2891,6 +2914,157 @@ async function loadHistory() {
         div.addEventListener('dblclick', () => showImportDetail(item.id));
         el.appendChild(div);
     });
+}
+
+async function handleImportSend(importId, year, month) {
+    // 1. 检查是否有已启用的发件人
+    try {
+        const senderRes = await fetch('/api/check-senders');
+        const senderData = await senderRes.json();
+        
+        if (!senderData.has_senders) {
+            const confirmed = await confirmModal(
+                '还没有配置发件人邮箱，无法发送工资单。<br><br>是否前往「发件人管理」页面配置？',
+                true
+            );
+            if (confirmed) {
+                // 切换到发件人管理标签页
+                document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+                document.querySelectorAll('.tab-panel').forEach(panel => panel.classList.remove('active'));
+                
+                const sendersBtn = document.querySelector('[data-tab="senders"]');
+                const sendersPanel = $('#tab-senders');
+                if (sendersBtn && sendersPanel) {
+                    sendersBtn.classList.add('active');
+                    sendersPanel.classList.add('active');
+                    loadSenders();
+                }
+            }
+            return;
+        }
+    } catch (e) {
+        infoModal(`检查发件人配置失败: ${e.message}`);
+        return;
+    }
+    
+    // 2. 获取发送详情
+    try {
+        const detailsRes = await fetch(`/api/import/${importId}/send-details`);
+        const details = await detailsRes.json();
+        
+        if (details.error) {
+            infoModal(details.error);
+            return;
+        }
+        
+        // 3. 判断是首次发送还是重发
+        if (details.sent > 0 || details.failed > 0) {
+            // 已有发送记录，显示重发确认对话框
+            const message = `${year}年${month}月工资单已发送过：<br>` +
+                           `成功: ${details.sent} 条<br>` +
+                           `失败: ${details.failed} 条<br>` +
+                           `待发送: ${details.pending} 条<br><br>` +
+                           `请选择操作：`;
+            
+            // 使用自定义对话框
+            const choice = await showResendConfirmDialog(message);
+            
+            if (choice === 'all') {
+                // 全部重发
+                await executeImportSend(importId, 'all', year, month);
+            } else if (choice === 'failed') {
+                // 仅失败重发
+                await executeImportSend(importId, 'failed', year, month);
+            }
+            // choice === 'cancel' 则不做任何操作
+            
+        } else {
+            // 首次发送
+            const hasEmailCount = details.total - details.no_email;
+            const message = `当前有工资单数据 ${details.total} 条，其中有邮箱 ${hasEmailCount} 条，无邮箱 ${details.no_email} 条。<br><br>是否发送工资单？`;
+            
+            const confirmed = await confirmModal(message, true);
+            if (confirmed) {
+                await executeImportSend(importId, 'all', year, month);
+            }
+        }
+        
+    } catch (e) {
+        infoModal(`获取发送详情失败: ${e.message}`);
+    }
+}
+
+function showResendConfirmDialog(message) {
+    return new Promise((resolve) => {
+        const modal = document.createElement('div');
+        modal.className = 'modal';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 450px;">
+                <div class="modal-header">
+                    <h3>工资单发送确认</h3>
+                    <button class="close-btn" onclick="this.closest('.modal').remove()">×</button>
+                </div>
+                <div class="modal-body" style="padding: 20px;">
+                    <p>${message}</p>
+                </div>
+                <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end; padding: 16px 20px; border-top: 1px solid var(--border);">
+                    <button class="btn" id="resend-cancel-btn">取消</button>
+                    <button class="btn primary" id="resend-failed-btn">失败重发</button>
+                    <button class="btn danger" id="resend-all-btn">全部重发</button>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        modal.querySelector('#resend-cancel-btn').addEventListener('click', () => {
+            modal.remove();
+            resolve('cancel');
+        });
+        
+        modal.querySelector('#resend-failed-btn').addEventListener('click', () => {
+            modal.remove();
+            resolve('failed');
+        });
+        
+        modal.querySelector('#resend-all-btn').addEventListener('click', () => {
+            modal.remove();
+            resolve('all');
+        });
+        
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+                resolve('cancel');
+            }
+        });
+    });
+}
+
+async function executeImportSend(importId, mode, year, month) {
+    const modeText = mode === 'failed' ? '失败重发' : '全部重发';
+    infoModal(`正在${modeText} ${year}年${month}月工资单，请稍候...`);
+    
+    try {
+        const res = await fetch(`/api/import/${importId}/send`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ mode })
+        });
+        
+        const data = await res.json();
+        
+        if (data.error) {
+            infoModal(`发送失败: ${data.error}`);
+        } else {
+            const successMsg = `发送完成！<br>成功: ${data.success_count} 条<br>失败: ${data.failed_count} 条`;
+            infoModal(successMsg, true);
+            // 刷新历史列表以更新进度
+            loadHistory();
+        }
+    } catch (e) {
+        infoModal(`发送异常: ${e.message}`);
+    }
 }
 
 async function showImportDetail(importId) {
@@ -3173,7 +3347,7 @@ function confirmModal(message, allowHtml = false) {
 }
 
 // 自定义信息提示弹框（居中显示，替代原生 alert）
-function infoModal(message) {
+function infoModal(message, allowHtml = false) {
     return new Promise((resolve) => {
         if (document.querySelector('.confirm-modal-overlay')) {
             resolve(false);
@@ -3181,8 +3355,9 @@ function infoModal(message) {
         }
         const overlay = document.createElement('div');
         overlay.className = 'confirm-modal-overlay';
+        const messageContent = allowHtml ? message : escapeHtml(message);
         overlay.innerHTML = `<div class="confirm-modal-box">
-            <p class="confirm-modal-message">${escapeHtml(message)}</p>
+            <p class="confirm-modal-message">${messageContent}</p>
             <div class="confirm-modal-actions">
                 <button class="btn primary" data-confirm="ok">确定</button>
             </div>
