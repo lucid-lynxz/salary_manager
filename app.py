@@ -1568,10 +1568,14 @@ def api_import_records(import_id):
             return jsonify({"error": "导入记录不存在"}), 404
         rows = conn.execute(
             """
-            SELECT p.community, p.name, p.email, p.email_status, p.email_issues,
+            SELECT p.id as person_id, p.community, p.name, p.email, 
+                   p.email_status, p.email_issues,
+                   p.email_sender_id, p.email_sent_at,
+                   se.email as sender_email,
                    sr.gross_salary, sr.total_deduction, sr.net_salary, sr.bank_account, sr.data_json
             FROM persons p
             LEFT JOIN salary_records sr ON sr.person_id = p.id AND sr.import_id = p.import_id
+            LEFT JOIN sender_emails se ON se.id = p.email_sender_id
             WHERE p.import_id = ?
             ORDER BY p.id
             """,
@@ -1588,11 +1592,15 @@ def api_import_records(import_id):
         # 收集所有出现过的列名
         all_detail_keys.update(detail.keys())
         records.append({
+            "person_id": r["person_id"],
             "community": r["community"],
             "name": r["name"],
             "email": r["email"],
             "email_status": r["email_status"],
             "email_issues": r["email_issues"],
+            "email_sender_id": r["email_sender_id"],
+            "email_sent_at": r["email_sent_at"],
+            "sender_email": r["sender_email"],
             "gross_salary": r["gross_salary"],
             "total_deduction": r["total_deduction"],
             "net_salary": r["net_salary"],
@@ -1616,6 +1624,65 @@ def api_import_records(import_id):
         "records": records,
         "detail_keys": detail_keys,
     })
+
+
+@app.route("/api/import/<int:import_id>/send-person/<int:person_id>", methods=["POST"])
+def api_import_send_person(import_id, person_id):
+    """单条重发工资单邮件。"""
+    try:
+        with get_db() as conn:
+            # 检查导入记录是否存在
+            imp = conn.execute(
+                "SELECT id, year, month FROM salary_imports WHERE id = ?",
+                (import_id,)
+            ).fetchone()
+            if not imp:
+                return jsonify({"error": "导入记录不存在"}), 404
+            
+            # 获取人员信息
+            row = conn.execute("""
+                SELECT p.id, p.community, p.name, p.email, sr.data_json
+                FROM persons p
+                LEFT JOIN salary_records sr ON sr.person_id = p.id AND sr.import_id = p.import_id
+                WHERE p.import_id = ? AND p.id = ?
+            """, (import_id, person_id)).fetchone()
+            
+            if not row:
+                return jsonify({"error": "人员记录不存在"}), 404
+            
+            if not row["email"]:
+                return jsonify({"error": "该人员没有邮箱地址"}), 400
+            
+            data_json = row["data_json"]
+            if not data_json:
+                return jsonify({"error": "该人员没有工资数据"}), 400
+            
+            salary_data = json.loads(data_json)
+            subject = f"{imp['year']}年{imp['month']}月工资单"
+            content = _build_email_content(salary_data, row["community"], row["name"])
+            
+            # 调用EmailSender发送单封邮件
+            from email_sender import EmailSender
+            sender_instance = EmailSender(get_db, decrypt_password)
+            
+            emails_to_send = [{
+                "person_id": row["id"],
+                "email": row["email"],
+                "subject": subject,
+                "content": content
+            }]
+            
+            result = sender_instance.send_batch_emails(emails_to_send)
+            
+            if result["success_count"] > 0:
+                return jsonify({"success": True, "message": "发送成功"}), 200
+            else:
+                error_msg = result["results"][0]["error"] if result["results"] else "发送失败"
+                return jsonify({"error": error_msg}), 500
+            
+    except Exception as e:
+        print(f"[SEND PERSON ERROR] Error: {e}", file=sys.stderr, flush=True)
+        return jsonify({"error": str(e)}), 500
 
 
 # ---------------------------------------------------------------------------

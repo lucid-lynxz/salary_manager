@@ -3266,23 +3266,47 @@ async function showImportDetail(importId) {
             return '';
         };
 
-        // 构建表头：工资表原始列 + 邮箱列
+        // 构建表头：工资表原始列 + 邮箱列 + 发件人邮箱 + 发送时间 + 操作
         const theadHtml = `<thead><tr>
             ${detailCols.map((col, i) => {
                 const cls = freezeClass(i);
                 return `<th${cls ? ` class="${cls}"` : ''}>${escapeHtml(col)}</th>`;
             }).join('')}
             <th>邮箱</th>
+            <th style="width:150px">发件人邮箱</th>
+            <th style="width:140px">发送时间</th>
+            <th style="width:80px">操作</th>
         </tr></thead>`;
 
+        function formatSendTime(sentAt) {
+            if (!sentAt) return '-';
+            try {
+                const d = new Date(sentAt.replace(' ', 'T') + '+08:00');
+                return d.toLocaleString('zh-CN', { 
+                    year: 'numeric', month: '2-digit', day: '2-digit',
+                    hour: '2-digit', minute: '2-digit'
+                });
+            } catch {
+                return sentAt;
+            }
+        }
+
         function rowHtml(rec) {
-            return `<tr>
+            return `<tr data-person-id="${rec.person_id}">
                 ${detailCols.map((col, i) => {
                     const cls = freezeClass(i);
                     const v = (rec.detail || {})[col];
                     return `<td${cls ? ` class="${cls}"` : ''}>${escapeHtml(v == null ? '' : String(v))}</td>`;
                 }).join('')}
                 <td>${escapeHtml(rec.email || '-')}</td>
+                <td>${escapeHtml(rec.sender_email || '-')}</td>
+                <td>${formatSendTime(rec.email_sent_at)}</td>
+                <td>
+                    <button class="btn small text" data-resend-person="${rec.person_id}" 
+                        ${!rec.email ? 'disabled title="无邮箱"' : ''}>
+                        发送
+                    </button>
+                </td>
             </tr>`;
         }
 
@@ -3349,6 +3373,43 @@ async function showImportDetail(importId) {
                     renderTable();
                 });
             }
+            
+            // 绑定单条发送按钮
+            body.querySelectorAll('[data-resend-person]').forEach(btn => {
+                btn.addEventListener('click', async () => {
+                    const personId = parseInt(btn.dataset.resendPerson);
+                    if (!personId || btn.disabled) return;
+                    
+                    btn.disabled = true;
+                    btn.textContent = '发送中...';
+                    
+                    try {
+                        const res = await fetch(`/api/import/${importId}/send-person/${personId}`, {
+                            method: 'POST'
+                        });
+                        const data = await res.json();
+                        
+                        if (data.error) {
+                            infoModal(`发送失败: ${data.error}`);
+                        } else {
+                            infoModal('发送成功！');
+                            // 重新加载详情以更新发件人和时间
+                            const r2 = await fetch(`/api/import/${importId}/records`).then(r => r.json());
+                            if (!r2.error) {
+                                // 更新当前 records 数据
+                                records.length = 0;
+                                r2.records.forEach(rec => records.push(rec));
+                                renderTable();
+                            }
+                        }
+                    } catch (e) {
+                        infoModal(`发送异常: ${e.message}`);
+                    } finally {
+                        btn.disabled = false;
+                        btn.textContent = '发送';
+                    }
+                });
+            });
 
             // 根据第一列实际宽度设置第二列的 left 偏移
             requestAnimationFrame(() => {
