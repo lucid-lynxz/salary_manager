@@ -8,6 +8,7 @@ import platform
 import subprocess
 import zipfile
 import sys
+import html
 from pathlib import Path
 from functools import wraps
 
@@ -2629,20 +2630,20 @@ def _build_email_content(salary_data: dict, community: str, name: str) -> str:
             td_style = f'style="padding: 10px; border: 1px solid #ddd; color: {color}; font-weight: {font_weight};"'
             rows_html += f"""
             <tr {row_style}>
-                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">{escapeHtml(key)}</td>
-                <td {td_style}>¥{escapeHtml(display_value)}</td>
+                <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">{html.escape(key)}</td>
+                <td {td_style}>¥{html.escape(display_value)}</td>
             </tr>"""
         else:
             # 普通字段
             rows_html += f"""
             <tr>
-                <td style="padding: 10px; border: 1px solid #ddd;">{escapeHtml(key)}</td>
-                <td style="padding: 10px; border: 1px solid #ddd;">{escapeHtml(display_value)}</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">{html.escape(key)}</td>
+                <td style="padding: 10px; border: 1px solid #ddd;">{html.escape(display_value)}</td>
             </tr>"""
     
-    html = f"""
+    html_content = f"""
     <div style="font-family: Arial, sans-serif; max-width: 700px; margin: 0 auto;">
-        <h2 style="color: #333;">{escapeHtml(community)} - {escapeHtml(name)} 工资单</h2>
+        <h2 style="color: #333;">{html.escape(community)} - {html.escape(name)} 工资单</h2>
         <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
             <tr style="background-color: #f5f5f5;">
                 <td style="padding: 10px; border: 1px solid #ddd; font-weight: bold;">项目</td>
@@ -2656,7 +2657,7 @@ def _build_email_content(salary_data: dict, community: str, name: str) -> str:
         </p>
     </div>
     """
-    return html
+    return html_content
 
 
 @app.route("/api/email-send-status", methods=["GET"])
