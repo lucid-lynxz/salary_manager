@@ -2685,7 +2685,7 @@ def _build_email_content(salary_data: dict, community: str, name: str) -> str:
     <html><head><meta charset="utf-8"></head>
     <body style="margin:0;padding:0;">
         <h2 style="color:#333;font-size:18px;font-weight:700;margin:0 0 14px 0;font-family:{FONT_ATTR};">
-            <font size="5" face="{FONT_ATTR}">{html.escape(community)} · {html.escape(name)} 工资单</font>
+            <font size="4" face="{FONT_ATTR}">{html.escape(community)} · {html.escape(name)} 工资单</font>
         </h2>
         <table style="width:100%;border-collapse:collapse;margin-top:10px;font-size:{FONT_SIZE_PT};font-family:{FONT_ATTR};">
             <tr>{headers_html}</tr>
