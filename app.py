@@ -2036,7 +2036,7 @@ def api_create_sender_email():
         
         # Optional fields with defaults
         smtp_server = data.get("smtp_server", "smtp.qq.com").strip()
-        smtp_port = data.get("smtp_port", 587)
+        smtp_port = data.get("smtp_port", 465)  # QQ邮箱SSL默认465
         imap_server = data.get("imap_server", "imap.qq.com").strip()
         imap_port = data.get("imap_port", 993)
         send_interval = data.get("send_interval", 10)
