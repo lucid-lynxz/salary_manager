@@ -2973,7 +2973,7 @@ async function handleImportSend(importId, year, month) {
         // 3. 判断是首次发送还是重发
         if (details.sent > 0 || details.failed > 0) {
             // 已有发送记录，显示重发确认对话框
-            const message = `${year}年${month}月工资单已发送过：<br>` +
+            const message = `${year}年${month}月工资单已发送过（共 ${details.total} 条）：<br>` +
                            `成功: ${details.sent} 条<br>` +
                            `失败: ${details.failed} 条<br>` +
                            `待发送: ${details.pending} 条<br><br>` +
