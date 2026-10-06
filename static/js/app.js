@@ -3485,7 +3485,12 @@ function testSender(id, email) {
     $('#test-sender-id').value = id;
     $('#test-recipient').value = '';
     $('#test-subject').value = '发送邮箱测试';
-    $('#test-content').value = '';
+    
+    // 生成默认测试内容（包含当前时间）
+    const now = new Date();
+    const timeStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+    $('#test-content').value = `这是一封测试邮件，发送时间：${timeStr}`;
+    
     $('#test-email-modal').classList.remove('hidden');
 }
 
