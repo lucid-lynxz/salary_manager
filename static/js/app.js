@@ -3214,4 +3214,468 @@ function infoModal(message) {
     // type="month" 原生日历选择器，无需手动校验
 })();
 
+// ---------------------------------------------------------------------------
+// Send Salary Emails
+// ---------------------------------------------------------------------------
+
+let currentImportId = null;
+let previewData = [];
+
+async function loadSendImports() {
+    try {
+        const res = await fetch('/api/import-history');
+        if (!res.ok) throw new Error('加载失败');
+        const data = await res.json();
+        
+        const select = $('#send-import-select');
+        select.innerHTML = '<option value="">请选择导入批次</option>';
+        
+        data.imports.forEach(imp => {
+            const option = document.createElement('option');
+            option.value = imp.id;
+            option.textContent = `${imp.year}年${imp.month}月 - ${imp.salary_filename || '无工资表'}`;
+            select.appendChild(option);
+        });
+        
+    } catch (e) {
+        infoModal(`加载导入历史失败: ${e.message}`);
+    }
+}
+
+$('#send-import-select').addEventListener('change', async (e) => {
+    const importId = e.target.value;
+    if (!importId) {
+        $('#send-preview-area').classList.add('hidden');
+        return;
+    }
+    
+    currentImportId = importId;
+    await loadPreviewData(importId);
+});
+
+async function loadPreviewData(importId) {
+    try {
+        const res = await fetch(`/api/persons-by-import?import_id=${importId}`);
+        if (!res.ok) throw new Error('加载失败');
+        const data = await res.json();
+        
+        previewData = data.persons || [];
+        
+        // Update stats
+        const validEmails = previewData.filter(p => p.email && isValidEmail(p.email));
+        const invalidEmails = previewData.filter(p => p.email && !isValidEmail(p.email));
+        
+        $('#preview-total').textContent = previewData.length;
+        $('#preview-valid').textContent = validEmails.length;
+        $('#preview-invalid').textContent = invalidEmails.length;
+        
+        // Build preview table
+        const tbody = $('#preview-tbody');
+        tbody.innerHTML = '';
+        
+        previewData.forEach((person, index) => {
+            const tr = document.createElement('tr');
+            const hasValidEmail = person.email && isValidEmail(person.email);
+            const statusClass = hasValidEmail ? 'status-valid' : 'status-invalid';
+            const statusText = hasValidEmail ? '有效' : (person.email ? '格式错误' : '无邮箱');
+            
+            tr.innerHTML = `
+                <td><input type="checkbox" class="row-checkbox" data-index="${index}" ${hasValidEmail ? 'checked' : ''} ${!hasValidEmail ? 'disabled' : ''}></td>
+                <td>${escapeHtml(person.community)}</td>
+                <td>${escapeHtml(person.name)}</td>
+                <td>${escapeHtml(person.email || '-')}</td>
+                <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+            `;
+            tbody.appendChild(tr);
+        });
+        
+        $('#send-preview-area').classList.remove('hidden');
+        
+    } catch (e) {
+        infoModal(`加载预览数据失败: ${e.message}`);
+    }
+}
+
+function isValidEmail(email) {
+    if (!email) return false;
+    return /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(email);
+}
+
+// Select all rows checkbox
+$('#select-all-rows').addEventListener('change', (e) => {
+    document.querySelectorAll('.row-checkbox:not([disabled])').forEach(cb => {
+        cb.checked = e.target.checked;
+    });
+});
+
+async function startBatchSend() {
+    // Get selected rows
+    const selectedIndices = [];
+    document.querySelectorAll('.row-checkbox:checked').forEach(cb => {
+        selectedIndices.push(parseInt(cb.dataset.index));
+    });
+    
+    if (selectedIndices.length === 0) {
+        infoModal('请至少选择一行');
+        return;
+    }
+    
+    const confirmed = await confirmModal(`确定要发送 ${selectedIndices.length} 封邮件吗？这可能需要较长时间。`);
+    if (!confirmed) return;
+    
+    // Prepare email data
+    const emailsToSend = selectedIndices.map(idx => {
+        const person = previewData[idx];
+        return {
+            person_id: person.id,
+            email: person.email,
+            subject: `${person.community} ${new Date().getFullYear()}年${new Date().getMonth() + 1}月工资单`,
+            content: generateEmailContent(person)
+        };
+    });
+    
+    // Show progress area
+    $('#send-progress-area').classList.remove('hidden');
+    $('#start-send-btn').disabled = true;
+    
+    try {
+        const res = await fetch('/api/send-salary-emails', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({emails: emailsToSend})
+        });
+        
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || '发送失败');
+        
+        // Show results
+        showSendResults(result);
+        
+    } catch (e) {
+        infoModal(`发送失败: ${e.message}`);
+        $('#start-send-btn').disabled = false;
+    }
+}
+
+function generateEmailContent(person) {
+    // Simple HTML email template
+    let html = `
+        <html>
+        <body style="font-family: Arial, sans-serif; padding: 20px;">
+            <h2 style="color: #333;">${person.community} 工资单</h2>
+            <p>您好，${person.name}：</p>
+            <p>以下是您本月的工资明细：</p>
+            <div style="background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 20px 0;">
+    `;
+    
+    // Parse data_json if available
+    if (person.data_json) {
+        try {
+            const data = typeof person.data_json === 'string' ? JSON.parse(person.data_json) : person.data_json;
+            for (const [key, value] of Object.entries(data)) {
+                html += `<p><strong>${key}:</strong> ${value}</p>`;
+            }
+        } catch (e) {
+            html += `<p>无法解析工资数据</p>`;
+        }
+    }
+    
+    html += `
+            </div>
+            <p style="color: #666; font-size: 12px;">此邮件由系统自动发送，请勿回复。</p>
+        </body>
+        </html>
+    `;
+    
+    return html;
+}
+
+function showSendResults(result) {
+    $('#send-results').classList.remove('hidden');
+    
+    const content = $('#send-results-content');
+    content.innerHTML = `
+        <div class="result-summary">
+            <p><strong>总计:</strong> ${result.total} 封</p>
+            <p><strong>成功:</strong> <span style="color: var(--success);">${result.success_count} 封</span></p>
+            <p><strong>失败:</strong> <span style="color: var(--danger);">${result.failed_count} 封</span></p>
+        </div>
+    `;
+    
+    if (result.results && result.results.length > 0) {
+        const failedResults = result.results.filter(r => !r.success);
+        if (failedResults.length > 0) {
+            content.innerHTML += `
+                <h4>失败详情:</h4>
+                <ul>
+                    ${failedResults.map(r => `<li>${escapeHtml(r.error || '未知错误')}</li>`).join('')}
+                </ul>
+            `;
+        }
+    }
+    
+    $('#start-send-btn').disabled = false;
+    
+    // Reload status
+    if (currentImportId) {
+        loadEmailStatus(currentImportId);
+    }
+}
+
+async function resetSendStatus() {
+    if (!currentImportId) return;
+    
+    const confirmed = await confirmModal('确定要重置所有发送状态吗？这将允许重新发送。');
+    if (!confirmed) return;
+    
+    try {
+        const res = await fetch('/api/reset-email-send-status', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({import_id: currentImportId})
+        });
+        
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || '重置失败');
+        
+        infoModal(result.message);
+        
+        // Reload preview
+        await loadPreviewData(currentImportId);
+        
+    } catch (e) {
+        infoModal(`重置失败: ${e.message}`);
+    }
+}
+
+async function loadEmailStatus(importId) {
+    try {
+        const res = await fetch(`/api/email-send-status?import_id=${importId}`);
+        if (!res.ok) return;
+        
+        const data = await res.json();
+        
+        // Update UI with status if needed
+        console.log('Email send status:', data);
+        
+    } catch (e) {
+        console.error('Failed to load email status:', e);
+    }
+}
+
+// Load imports when tab is activated
+document.querySelectorAll('.tab-btn[data-tab="send-emails"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+        setTimeout(loadSendImports, 100);
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Sender Email Management
+// ---------------------------------------------------------------------------
+
+let currentSenderId = null;
+
+async function loadSenders() {
+    try {
+        const res = await fetch('/api/sender-emails');
+        if (!res.ok) throw new Error('加载失败');
+        const data = await res.json();
+        
+        const container = $('#senders-list');
+        if (!data.senders || data.senders.length === 0) {
+            container.innerHTML = '<p class="empty-text">暂无发件人，请点击右上角添加</p>';
+            return;
+        }
+        
+        let html = '<div class="senders-grid">';
+        data.senders.forEach(sender => {
+            const statusClass = sender.is_enabled ? 'enabled' : 'disabled';
+            const statusText = sender.is_enabled ? '启用' : '禁用';
+            const lastSend = sender.last_send_time ? formatDateTime(sender.last_send_time) : '从未发送';
+            
+            html += `
+                <div class="sender-card ${statusClass}">
+                    <div class="sender-card-header">
+                        <div class="sender-email">${escapeHtml(sender.email)}</div>
+                        <div class="sender-status-badge ${statusClass}">${statusText}</div>
+                    </div>
+                    <div class="sender-card-body">
+                        <div class="sender-info">
+                            <span>SMTP:</span> ${escapeHtml(sender.smtp_server)}:${sender.smtp_port}
+                        </div>
+                        <div class="sender-info">
+                            <span>IMAP:</span> ${escapeHtml(sender.imap_server)}:${sender.imap_port}
+                        </div>
+                        <div class="sender-info">
+                            <span>间隔:</span> ${sender.send_interval}秒
+                        </div>
+                        <div class="sender-info">
+                            <span>最后发送:</span> ${lastSend}
+                        </div>
+                    </div>
+                    <div class="sender-card-actions">
+                        <button class="btn small" onclick="toggleSender(${sender.id})">
+                            ${sender.is_enabled ? '禁用' : '启用'}
+                        </button>
+                        <button class="btn small text" onclick="editSender(${sender.id})">编辑</button>
+                        <button class="btn small text danger" onclick="deleteSender(${sender.id}, '${escapeHtml(sender.email)}')">删除</button>
+                    </div>
+                </div>
+            `;
+        });
+        html += '</div>';
+        container.innerHTML = html;
+        
+    } catch (e) {
+        $('#senders-list').innerHTML = `<p class="error-text">加载失败: ${e.message}</p>`;
+    }
+}
+
+function showAddSenderModal() {
+    currentSenderId = null;
+    $('#sender-modal-title').textContent = '添加发件人';
+    $('#sender-form').reset();
+    $('#sender-id').value = '';
+    $('#sender-password').required = true;
+    $('#sender-modal').classList.remove('hidden');
+}
+
+async function editSender(id) {
+    try {
+        const res = await fetch('/api/sender-emails');
+        if (!res.ok) throw new Error('加载失败');
+        const data = await res.json();
+        
+        const sender = data.senders.find(s => s.id === id);
+        if (!sender) throw new Error('发件人不存在');
+        
+        currentSenderId = id;
+        $('#sender-modal-title').textContent = '编辑发件人';
+        $('#sender-id').value = id;
+        $('#sender-email').value = sender.email;
+        $('#sender-smtp-server').value = sender.smtp_server;
+        $('#sender-smtp-port').value = sender.smtp_port;
+        $('#sender-imap-server').value = sender.imap_server;
+        $('#sender-imap-port').value = sender.imap_port;
+        $('#sender-interval').value = sender.send_interval;
+        $('#sender-password').required = false;
+        $('#sender-password').placeholder = '留空则不修改密码';
+        
+        $('#sender-modal').classList.remove('hidden');
+        
+    } catch (e) {
+        infoModal(`加载发件人信息失败: ${e.message}`);
+    }
+}
+
+function closeSenderModal() {
+    $('#sender-modal').classList.add('hidden');
+    currentSenderId = null;
+}
+
+async function saveSender(event) {
+    event.preventDefault();
+    
+    const data = {
+        email: $('#sender-email').value,
+        smtp_server: $('#sender-smtp-server').value,
+        smtp_port: parseInt($('#sender-smtp-port').value),
+        imap_server: $('#sender-imap-server').value,
+        imap_port: parseInt($('#sender-imap-port').value),
+        send_interval: parseInt($('#sender-interval').value)
+    };
+    
+    const password = $('#sender-password').value;
+    if (password) {
+        data.password = password;
+    } else if (!currentSenderId) {
+        infoModal('密码不能为空');
+        return;
+    }
+    
+    try {
+        let res;
+        if (currentSenderId) {
+            // Update
+            res = await fetch(`/api/sender-emails/${currentSenderId}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+        } else {
+            // Create
+            data.password = password;
+            res = await fetch('/api/sender-emails', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(data)
+            });
+        }
+        
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || '操作失败');
+        
+        infoModal(result.message || '保存成功');
+        closeSenderModal();
+        loadSenders();
+        
+    } catch (e) {
+        infoModal(`保存失败: ${e.message}`);
+    }
+}
+
+async function toggleSender(id) {
+    try {
+        const res = await fetch(`/api/sender-emails/${id}/toggle`, {
+            method: 'PATCH'
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || '操作失败');
+        
+        infoModal(result.message);
+        loadSenders();
+        
+    } catch (e) {
+        infoModal(`操作失败: ${e.message}`);
+    }
+}
+
+async function deleteSender(id, email) {
+    const confirmed = await confirmModal(`确定要删除发件人 "${email}" 吗？`);
+    if (!confirmed) return;
+    
+    try {
+        const res = await fetch(`/api/sender-emails/${id}`, {
+            method: 'DELETE'
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || '删除失败');
+        
+        infoModal(result.message);
+        loadSenders();
+        
+    } catch (e) {
+        infoModal(`删除失败: ${e.message}`);
+    }
+}
+
+function formatDateTime(dateStr) {
+    if (!dateStr) return '';
+    const date = new Date(dateStr.replace(' ', 'T'));
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}`;
+}
+
+// Load senders when tab is activated
+document.querySelectorAll('.tab-btn[data-tab="senders"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+        setTimeout(loadSenders, 100);
+    });
+});
+
 applySavedTheme();

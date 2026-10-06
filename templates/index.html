@@ -49,6 +49,8 @@
                 <button class="tab-btn active" data-tab="import">导入数据</button>
                 <button class="tab-btn" data-tab="search">人员查询</button>
                 <button class="tab-btn" data-tab="history">导入历史</button>
+                <button class="tab-btn" data-tab="senders">发件人管理</button>
+                <button class="tab-btn" data-tab="send-emails">发送邮件</button>
             </nav>
         </header>
 
@@ -262,6 +264,78 @@
             <section id="tab-history" class="tab-panel">
                 <div id="history-list" class="history-list"></div>
             </section>
+
+            <!-- 发件人管理 -->
+            <section id="tab-senders" class="tab-panel">
+                <div class="sender-management">
+                    <div class="panel-header">
+                        <h2>发件人邮箱管理</h2>
+                        <button class="btn primary" onclick="showAddSenderModal()">添加发件人</button>
+                    </div>
+                    <div id="senders-list" class="senders-list">
+                        <p class="loading-text">加载中...</p>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 发送邮件 -->
+            <section id="tab-send-emails" class="tab-panel">
+                <div class="send-emails-panel">
+                    <h2>批量发送工资单邮件</h2>
+                    
+                    <div class="form-group">
+                        <label>选择导入批次</label>
+                        <select id="send-import-select">
+                            <option value="">请选择导入批次</option>
+                        </select>
+                    </div>
+
+                    <div id="send-preview-area" class="send-preview hidden">
+                        <div class="preview-header">
+                            <h3>发送预览</h3>
+                            <div class="preview-stats">
+                                <span>总人数: <strong id="preview-total">0</strong></span>
+                                <span>有效邮箱: <strong id="preview-valid">0</strong></span>
+                                <span>无效邮箱: <strong id="preview-invalid">0</strong></span>
+                            </div>
+                        </div>
+                        
+                        <div class="preview-table-container">
+                            <table class="preview-table">
+                                <thead>
+                                    <tr>
+                                        <th><input type="checkbox" id="select-all-rows" checked></th>
+                                        <th>社区</th>
+                                        <th>姓名</th>
+                                        <th>邮箱</th>
+                                        <th>状态</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="preview-tbody">
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <div class="send-actions">
+                            <button class="btn primary" id="start-send-btn" onclick="startBatchSend()">开始发送</button>
+                            <button class="btn text" onclick="resetSendStatus()">重置发送状态</button>
+                        </div>
+
+                        <div id="send-progress-area" class="send-progress hidden">
+                            <div class="progress-bar-container">
+                                <div class="progress-bar" id="send-progress-bar"></div>
+                            </div>
+                            <div class="progress-text" id="send-progress-text">准备发送...</div>
+                            <div class="progress-details" id="send-progress-details"></div>
+                        </div>
+
+                        <div id="send-results" class="send-results hidden">
+                            <h3>发送结果</h3>
+                            <div id="send-results-content"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
         </main>
     </div>
 
@@ -270,6 +344,61 @@
         <div class="modal-content">
             <span class="close-btn">&times;</span>
             <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <!-- 添加/编辑发件人弹窗 -->
+    <div id="sender-modal" class="modal hidden">
+        <div class="modal-content modal-large">
+            <span class="close-btn" onclick="closeSenderModal()">&times;</span>
+            <h2 id="sender-modal-title">添加发件人</h2>
+            <form id="sender-form" onsubmit="saveSender(event)">
+                <input type="hidden" id="sender-id">
+                
+                <div class="form-group">
+                    <label for="sender-email">邮箱地址 <span class="required">*</span></label>
+                    <input type="email" id="sender-email" required placeholder="example@qq.com">
+                </div>
+
+                <div class="form-group">
+                    <label for="sender-password">密码/授权码 <span class="required">*</span></label>
+                    <input type="password" id="sender-password" required placeholder="QQ邮箱请使用授权码">
+                    <span class="hint-text">QQ邮箱授权码获取：<a href="https://service.mail.qq.com/cgi-bin/help?subtype=1&&id=28&&no=1001256" target="_blank">点击查看教程</a></span>
+                </div>
+
+                <div class="form-row form-row-2">
+                    <div class="form-group">
+                        <label for="sender-smtp-server">SMTP服务器</label>
+                        <input type="text" id="sender-smtp-server" value="smtp.qq.com" placeholder="smtp.qq.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="sender-smtp-port">SMTP端口</label>
+                        <input type="number" id="sender-smtp-port" value="587" min="1" max="65535">
+                    </div>
+                </div>
+
+                <div class="form-row form-row-2">
+                    <div class="form-group">
+                        <label for="sender-imap-server">IMAP服务器</label>
+                        <input type="text" id="sender-imap-server" value="imap.qq.com" placeholder="imap.qq.com">
+                    </div>
+                    <div class="form-group">
+                        <label for="sender-imap-port">IMAP端口</label>
+                        <input type="number" id="sender-imap-port" value="993" min="1" max="65535">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="sender-interval">发送间隔（秒）</label>
+                    <input type="number" id="sender-interval" value="10" min="5" max="300">
+                    <span class="hint-text">建议设置为10秒以上，避免被邮箱服务商判定为垃圾邮件</span>
+                </div>
+
+                <div class="modal-actions">
+                    <button type="button" class="btn text" onclick="closeSenderModal()">取消</button>
+                    <button type="submit" class="btn primary">保存</button>
+                </div>
+            </form>
         </div>
     </div>
 

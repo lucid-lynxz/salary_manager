@@ -7,12 +7,14 @@ import datetime
 import platform
 import subprocess
 import zipfile
+import sys
 from pathlib import Path
 from functools import wraps
 
 import pandas as pd
 from dateutil import parser as date_parser
 from flask import Flask, request, jsonify, render_template, send_from_directory, send_file
+from cryptography.fernet import Fernet
 
 app = Flask(__name__)
 
@@ -20,7 +22,35 @@ BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 DB_PATH = BASE_DIR / "salary.db"
 USER_CONFIG_PATH = BASE_DIR / "user_config.json"
+ENCRYPTION_KEY_PATH = BASE_DIR / ".encryption_key"
 UPLOAD_DIR.mkdir(exist_ok=True)
+
+# ---------------------------------------------------------------------------
+# Encryption setup
+# ---------------------------------------------------------------------------
+
+def get_encryption_key():
+    """获取或创建加密密钥。"""
+    if ENCRYPTION_KEY_PATH.exists():
+        return ENCRYPTION_KEY_PATH.read_bytes()
+    else:
+        key = Fernet.generate_key()
+        ENCRYPTION_KEY_PATH.write_bytes(key)
+        return key
+
+ENCRYPTION_KEY = get_encryption_key()
+FERNET = Fernet(ENCRYPTION_KEY)
+
+
+def encrypt_password(password: str) -> str:
+    """加密密码。"""
+    return FERNET.encrypt(password.encode('utf-8')).decode('utf-8')
+
+
+def decrypt_password(encrypted_password: str) -> str:
+    """解密密码。"""
+    return FERNET.decrypt(encrypted_password.encode('utf-8')).decode('utf-8')
+
 
 # ---------------------------------------------------------------------------
 # Database
@@ -66,6 +96,21 @@ def init_db():
         bank_account TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS sender_emails (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT NOT NULL UNIQUE,
+        password_encrypted TEXT NOT NULL,
+        smtp_server TEXT NOT NULL DEFAULT 'smtp.qq.com',
+        smtp_port INTEGER NOT NULL DEFAULT 587,
+        imap_server TEXT NOT NULL DEFAULT 'imap.qq.com',
+        imap_port INTEGER NOT NULL DEFAULT 993,
+        is_enabled INTEGER NOT NULL DEFAULT 1,
+        send_interval INTEGER NOT NULL DEFAULT 10,
+        last_send_time TEXT,
+        created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_persons_name ON persons(name);
     CREATE INDEX IF NOT EXISTS idx_persons_community ON persons(community);
     CREATE INDEX IF NOT EXISTS idx_persons_import ON persons(import_id);
@@ -73,6 +118,7 @@ def init_db():
     """
     with get_db() as conn:
         conn.executescript(schema)
+        
         # 迁移：旧版 persons 表有 UNIQUE(import_id, community, name) 约束，
         # 会导致同社区同名的工资记录被覆盖。检测并移除该约束。
         cur = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='persons'")
@@ -95,6 +141,20 @@ def init_db():
                 CREATE INDEX IF NOT EXISTS idx_persons_community ON persons(community);
                 CREATE INDEX IF NOT EXISTS idx_persons_import ON persons(import_id);
             """)
+        
+        # 迁移：为 persons 表添加邮件发送相关字段
+        cur = conn.execute("PRAGMA table_info(persons)")
+        columns = [col["name"] for col in cur.fetchall()]
+        if "email_sent" not in columns:
+            conn.execute("ALTER TABLE persons ADD COLUMN email_sent INTEGER NOT NULL DEFAULT 0")
+        if "email_sent_at" not in columns:
+            conn.execute("ALTER TABLE persons ADD COLUMN email_sent_at TEXT")
+        if "email_sender_id" not in columns:
+            conn.execute("ALTER TABLE persons ADD COLUMN email_sender_id INTEGER REFERENCES sender_emails(id)")
+        if "email_send_status" not in columns:
+            conn.execute("ALTER TABLE persons ADD COLUMN email_send_status TEXT NOT NULL DEFAULT 'pending'")
+        if "email_error_msg" not in columns:
+            conn.execute("ALTER TABLE persons ADD COLUMN email_error_msg TEXT")
 
 
 init_db()
@@ -1954,6 +2014,366 @@ def api_download_export(export_id):
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Sender Email Management APIs
+# ---------------------------------------------------------------------------
+
+@app.route("/api/sender-emails", methods=["POST"])
+def api_create_sender_email():
+    """添加发件人邮箱配置。"""
+    try:
+        data = request.get_json() or {}
+        
+        # Required fields
+        email = data.get("email", "").strip()
+        password = data.get("password", "").strip()
+        
+        if not email or not password:
+            return jsonify({"error": "邮箱和密码不能为空"}), 400
+        
+        # Optional fields with defaults
+        smtp_server = data.get("smtp_server", "smtp.qq.com").strip()
+        smtp_port = data.get("smtp_port", 587)
+        imap_server = data.get("imap_server", "imap.qq.com").strip()
+        imap_port = data.get("imap_port", 993)
+        send_interval = data.get("send_interval", 10)
+        
+        # Validate email format
+        if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
+            return jsonify({"error": "邮箱格式不正确"}), 400
+        
+        # Test SMTP connection before saving
+        try:
+            import smtplib
+            server = smtplib.SMTP_SSL(smtp_server, int(smtp_port), timeout=10)
+            server.login(email, password)
+            server.quit()
+        except Exception as smtp_error:
+            return jsonify({"error": f"SMTP连接测试失败: {str(smtp_error)}"}), 400
+        
+        # Encrypt password
+        password_encrypted = encrypt_password(password)
+        
+        with get_db() as conn:
+            conn.execute("""
+                INSERT INTO sender_emails (email, password_encrypted, smtp_server, smtp_port, 
+                                          imap_server, imap_port, send_interval)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (email, password_encrypted, smtp_server, int(smtp_port),
+                  imap_server, int(imap_port), int(send_interval)))
+        
+        return jsonify({"success": True, "message": "发件人邮箱添加成功"}), 201
+        
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "该邮箱已存在"}), 409
+    except Exception as e:
+        print(f"[CREATE SENDER] Error: {e}", file=sys.stderr, flush=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/sender-emails", methods=["GET"])
+def api_list_sender_emails():
+    """获取所有发件人邮箱列表（密码隐藏）。"""
+    try:
+        with get_db() as conn:
+            rows = conn.execute("""
+                SELECT id, email, smtp_server, smtp_port, imap_server, imap_port,
+                       is_enabled, send_interval, last_send_time, created_at, updated_at
+                FROM sender_emails
+                ORDER BY created_at DESC
+            """).fetchall()
+            
+            senders = []
+            for row in rows:
+                senders.append({
+                    "id": row["id"],
+                    "email": row["email"],
+                    "smtp_server": row["smtp_server"],
+                    "smtp_port": row["smtp_port"],
+                    "imap_server": row["imap_server"],
+                    "imap_port": row["imap_port"],
+                    "is_enabled": bool(row["is_enabled"]),
+                    "send_interval": row["send_interval"],
+                    "last_send_time": row["last_send_time"],
+                    "created_at": row["created_at"],
+                    "updated_at": row["updated_at"]
+                })
+            
+            return jsonify({"senders": senders}), 200
+            
+    except Exception as e:
+        print(f"[LIST SENDERS] Error: {e}", file=sys.stderr, flush=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/sender-emails/<int:sender_id>", methods=["PUT"])
+def api_update_sender_email(sender_id):
+    """更新发件人邮箱配置。"""
+    try:
+        data = request.get_json() or {}
+        
+        with get_db() as conn:
+            # Check if sender exists
+            existing = conn.execute("SELECT * FROM sender_emails WHERE id = ?", (sender_id,)).fetchone()
+            if not existing:
+                return jsonify({"error": "发件人不存在"}), 404
+            
+            # Update fields
+            email = data.get("email", existing["email"]).strip()
+            smtp_server = data.get("smtp_server", existing["smtp_server"]).strip()
+            smtp_port = data.get("smtp_port", existing["smtp_port"])
+            imap_server = data.get("imap_server", existing["imap_server"]).strip()
+            imap_port = data.get("imap_port", existing["imap_port"])
+            send_interval = data.get("send_interval", existing["send_interval"])
+            
+            # Validate email format
+            if not re.match(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$', email):
+                return jsonify({"error": "邮箱格式不正确"}), 400
+            
+            # If password is provided, test and update it
+            password_encrypted = existing["password_encrypted"]
+            if "password" in data and data["password"]:
+                password = data["password"].strip()
+                
+                # Test SMTP connection
+                try:
+                    import smtplib
+                    server = smtplib.SMTP_SSL(smtp_server, int(smtp_port), timeout=10)
+                    server.login(email, password)
+                    server.quit()
+                except Exception as smtp_error:
+                    return jsonify({"error": f"SMTP连接测试失败: {str(smtp_error)}"}), 400
+                
+                password_encrypted = encrypt_password(password)
+            
+            # Update database
+            conn.execute("""
+                UPDATE sender_emails 
+                SET email = ?, password_encrypted = ?, smtp_server = ?, smtp_port = ?,
+                    imap_server = ?, imap_port = ?, send_interval = ?,
+                    updated_at = datetime('now', 'localtime')
+                WHERE id = ?
+            """, (email, password_encrypted, smtp_server, int(smtp_port),
+                  imap_server, int(imap_port), int(send_interval), sender_id))
+        
+        return jsonify({"success": True, "message": "发件人邮箱更新成功"}), 200
+        
+    except Exception as e:
+        print(f"[UPDATE SENDER] Error: {e}", file=sys.stderr, flush=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/sender-emails/<int:sender_id>", methods=["DELETE"])
+def api_delete_sender_email(sender_id):
+    """删除发件人邮箱配置。"""
+    try:
+        with get_db() as conn:
+            # Check if sender exists
+            existing = conn.execute("SELECT * FROM sender_emails WHERE id = ?", (sender_id,)).fetchone()
+            if not existing:
+                return jsonify({"error": "发件人不存在"}), 404
+            
+            # Delete sender
+            conn.execute("DELETE FROM sender_emails WHERE id = ?", (sender_id,))
+        
+        return jsonify({"success": True, "message": "发件人邮箱删除成功"}), 200
+        
+    except Exception as e:
+        print(f"[DELETE SENDER] Error: {e}", file=sys.stderr, flush=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/sender-emails/<int:sender_id>/toggle", methods=["PATCH"])
+def api_toggle_sender_email(sender_id):
+    """启用/禁用发件人邮箱。"""
+    try:
+        with get_db() as conn:
+            # Check if sender exists
+            existing = conn.execute("SELECT * FROM sender_emails WHERE id = ?", (sender_id,)).fetchone()
+            if not existing:
+                return jsonify({"error": "发件人不存在"}), 404
+            
+            # Toggle status
+            new_status = 0 if existing["is_enabled"] else 1
+            conn.execute("""
+                UPDATE sender_emails 
+                SET is_enabled = ?, updated_at = datetime('now', 'localtime')
+                WHERE id = ?
+            """, (new_status, sender_id))
+        
+        status_text = "启用" if new_status else "禁用"
+        return jsonify({"success": True, "message": f"发件人邮箱已{status_text}"}), 200
+        
+    except Exception as e:
+        print(f"[TOGGLE SENDER] Error: {e}", file=sys.stderr, flush=True)
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Batch Email Sending APIs
+# ---------------------------------------------------------------------------
+
+@app.route("/api/send-salary-emails", methods=["POST"])
+def api_send_salary_emails():
+    """批量发送工资单邮件。"""
+    try:
+        data = request.get_json() or {}
+        
+        # Get emails to send
+        emails_to_send = data.get("emails", [])
+        if not emails_to_send:
+            return jsonify({"error": "没有要发送的邮件"}), 400
+        
+        # Import EmailSender
+        from email_sender import EmailSender
+        
+        # Create sender instance
+        sender = EmailSender(get_db, decrypt_password)
+        
+        # Send batch emails
+        result = sender.send_batch_emails(emails_to_send)
+        
+        return jsonify(result), 200
+        
+    except Exception as e:
+        print(f"[SEND BATCH ERROR] Error: {e}", file=sys.stderr, flush=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/email-send-status", methods=["GET"])
+def api_email_send_status():
+    """获取邮件发送状态统计。"""
+    try:
+        import_id = request.args.get("import_id")
+        if not import_id:
+            return jsonify({"error": "缺少 import_id 参数"}), 400
+        
+        with get_db() as conn:
+            # Get total count
+            total = conn.execute(
+                "SELECT COUNT(*) FROM persons WHERE import_id = ?", 
+                (import_id,)
+            ).fetchone()[0]
+            
+            # Get sent count
+            sent = conn.execute(
+                "SELECT COUNT(*) FROM persons WHERE import_id = ? AND email_sent = 1", 
+                (import_id,)
+            ).fetchone()[0]
+            
+            # Get pending count
+            pending = conn.execute(
+                "SELECT COUNT(*) FROM persons WHERE import_id = ? AND email_send_status = 'pending'", 
+                (import_id,)
+            ).fetchone()[0]
+            
+            # Get failed count
+            failed = conn.execute(
+                "SELECT COUNT(*) FROM persons WHERE import_id = ? AND email_send_status = 'failed'", 
+                (import_id,)
+            ).fetchone()[0]
+            
+            # Get detailed status breakdown
+            status_breakdown = conn.execute("""
+                SELECT email_send_status, COUNT(*) as count
+                FROM persons
+                WHERE import_id = ?
+                GROUP BY email_send_status
+            """, (import_id,)).fetchall()
+            
+            breakdown_dict = {}
+            for row in status_breakdown:
+                breakdown_dict[row["email_send_status"]] = row["count"]
+            
+            return jsonify({
+                "total": total,
+                "sent": sent,
+                "pending": pending,
+                "failed": failed,
+                "breakdown": breakdown_dict
+            }), 200
+            
+    except Exception as e:
+        print(f"[EMAIL STATUS ERROR] Error: {e}", file=sys.stderr, flush=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/reset-email-send-status", methods=["POST"])
+def api_reset_email_send_status():
+    """重置邮件发送状态（用于重新发送）。"""
+    try:
+        data = request.get_json() or {}
+        import_id = data.get("import_id")
+        
+        if not import_id:
+            return jsonify({"error": "缺少 import_id 参数"}), 400
+        
+        with get_db() as conn:
+            # Reset all persons for this import
+            conn.execute("""
+                UPDATE persons 
+                SET email_sent = 0,
+                    email_sent_at = NULL,
+                    email_sender_id = NULL,
+                    email_send_status = 'pending',
+                    email_error_msg = NULL
+                WHERE import_id = ?
+            """, (import_id,))
+            
+            affected_rows = conn.execute(
+                "SELECT changes()"
+            ).fetchone()[0]
+        
+        return jsonify({
+            "success": True, 
+            "message": f"已重置 {affected_rows} 条记录的发送状态",
+            "reset_count": affected_rows
+        }), 200
+        
+    except Exception as e:
+        print(f"[RESET STATUS ERROR] Error: {e}", file=sys.stderr, flush=True)
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/persons-by-import", methods=["GET"])
+def api_persons_by_import():
+    """获取指定导入批次的所有人员信息（用于邮件发送预览）。"""
+    try:
+        import_id = request.args.get("import_id")
+        if not import_id:
+            return jsonify({"error": "缺少 import_id 参数"}), 400
+        
+        with get_db() as conn:
+            rows = conn.execute("""
+                SELECT p.id, p.community, p.name, p.email, 
+                       p.email_sent, p.email_send_status, p.email_error_msg,
+                       sr.data_json
+                FROM persons p
+                LEFT JOIN salary_records sr ON sr.person_id = p.id
+                WHERE p.import_id = ?
+                ORDER BY p.id
+            """, (import_id,)).fetchall()
+            
+            persons = []
+            for row in rows:
+                persons.append({
+                    "id": row["id"],
+                    "community": row["community"],
+                    "name": row["name"],
+                    "email": row["email"],
+                    "email_sent": bool(row["email_sent"]),
+                    "email_send_status": row["email_send_status"],
+                    "email_error_msg": row["email_error_msg"],
+                    "data_json": row["data_json"]
+                })
+            
+            return jsonify({"persons": persons}), 200
+            
+    except Exception as e:
+        print(f"[PERSONS BY IMPORT ERROR] Error: {e}", file=sys.stderr, flush=True)
         return jsonify({"error": str(e)}), 500
 
 

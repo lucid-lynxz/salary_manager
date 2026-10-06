@@ -1147,6 +1147,389 @@ html[data-theme="dark"] .flatpickr-weekdays { background: #1e293b; }
 html[data-theme="dark"] .flatpickr-weekday { color: var(--muted); }
 html[data-theme="dark"] .flatpickr-day.inRange { background: #334155; border-color: #334155; }
 html[data-theme="dark"] .flatpickr-day.today { border-color: var(--primary); }
+
+/* ---------------------------------------------------------------------------
+   Sender Email Management
+   --------------------------------------------------------------------------- */
+
+.sender-management {
+    padding: 20px;
+}
+
+.panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+}
+
+.panel-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+}
+
+.senders-list {
+    min-height: 200px;
+}
+
+.senders-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: 16px;
+}
+
+.sender-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    transition: all 0.2s ease;
+}
+
+.sender-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    transform: translateY(-2px);
+}
+
+.sender-card.disabled {
+    opacity: 0.6;
+}
+
+.sender-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.sender-email {
+    font-weight: 600;
+    font-size: 1rem;
+    color: var(--text);
+    word-break: break-all;
+}
+
+.sender-status-badge {
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.sender-status-badge.enabled {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.sender-status-badge.disabled {
+    background: #f1f5f9;
+    color: #64748b;
+}
+
+html[data-theme="dark"] .sender-status-badge.enabled {
+    background: #14321f;
+    color: #4ade80;
+}
+
+html[data-theme="dark"] .sender-status-badge.disabled {
+    background: #334155;
+    color: #94a3b8;
+}
+
+.sender-card-body {
+    margin-bottom: 12px;
+}
+
+.sender-info {
+    font-size: 0.875rem;
+    color: var(--muted);
+    margin-bottom: 6px;
+}
+
+.sender-info span {
+    font-weight: 500;
+    color: var(--text);
+}
+
+.sender-card-actions {
+    display: flex;
+    gap: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+}
+
+.loading-text,
+.empty-text,
+.error-text {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--muted);
+    font-size: 0.9rem;
+}
+
+.error-text {
+    color: var(--danger);
+}
+
+/* Modal for sender form */
+.modal-large {
+    max-width: 700px;
+    width: 90%;
+}
+
+.form-row-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+}
+
+.hint-text {
+    display: block;
+    margin-top: 4px;
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+.hint-text a {
+    color: var(--primary);
+    text-decoration: none;
+}
+
+.hint-text a:hover {
+    text-decoration: underline;
+}
+
+.required {
+    color: var(--danger);
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border);
+}
+
+/* Dark mode adjustments */
+html[data-theme="dark"] .sender-card {
+    background: #1e293b;
+    border-color: #334155;
+}
+
+html[data-theme="dark"] .sender-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+html[data-theme="dark"] .modal-large {
+    background: #1e293b;
+    border-color: #334155;
+}
+
+/* ---------------------------------------------------------------------------
+   Send Emails Page
+   --------------------------------------------------------------------------- */
+
+.send-emails-panel {
+    padding: 20px;
+}
+
+.send-emails-panel h2 {
+    margin-bottom: 20px;
+}
+
+.preview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    padding: 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+
+.preview-header h3 {
+    margin: 0;
+    font-size: 1.1rem;
+}
+
+.preview-stats {
+    display: flex;
+    gap: 20px;
+    font-size: 0.9rem;
+}
+
+.preview-stats span {
+    color: var(--muted);
+}
+
+.preview-stats strong {
+    color: var(--text);
+    margin-left: 4px;
+}
+
+.preview-table-container {
+    max-height: 400px;
+    overflow-y: auto;
+    margin-bottom: 16px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+
+.preview-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.preview-table thead {
+    position: sticky;
+    top: 0;
+    background: var(--bg-secondary);
+    z-index: 1;
+}
+
+.preview-table th {
+    padding: 10px;
+    text-align: left;
+    font-weight: 600;
+    color: var(--text);
+    border-bottom: 2px solid var(--border);
+}
+
+.preview-table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+}
+
+.preview-table tbody tr:hover {
+    background: var(--bg-hover);
+}
+
+.status-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+.status-badge.status-valid {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.status-badge.status-invalid {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+html[data-theme="dark"] .status-badge.status-valid {
+    background: #14321f;
+    color: #4ade80;
+}
+
+html[data-theme="dark"] .status-badge.status-invalid {
+    background: #450a0a;
+    color: #f87171;
+}
+
+.send-actions {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.send-progress {
+    padding: 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 20px;
+}
+
+.progress-bar-container {
+    width: 100%;
+    height: 24px;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 8px;
+}
+
+.progress-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--primary), #3b82f6);
+    transition: width 0.3s ease;
+}
+
+.progress-text {
+    text-align: center;
+    font-size: 0.9rem;
+    color: var(--text);
+    margin-bottom: 4px;
+}
+
+.progress-details {
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+.send-results {
+    padding: 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+}
+
+.send-results h3 {
+    margin-bottom: 12px;
+    font-size: 1.1rem;
+}
+
+.result-summary {
+    padding: 12px;
+    background: var(--bg-secondary);
+    border-radius: 6px;
+    margin-bottom: 12px;
+}
+
+.result-summary p {
+    margin: 6px 0;
+}
+
+.hidden {
+    display: none !important;
+}
+
+/* Dark mode adjustments */
+html[data-theme="dark"] .preview-header,
+html[data-theme="dark"] .preview-table-container,
+html[data-theme="dark"] .send-progress,
+html[data-theme="dark"] .send-results {
+    background: #1e293b;
+    border-color: #334155;
+}
+
+html[data-theme="dark"] .preview-table thead {
+    background: #334155;
+}
+
+html[data-theme="dark"] .progress-bar-container {
+    background: #334155;
+}
+
+html[data-theme="dark"] .result-summary {
+    background: #334155;
+}
+
+
 html[data-theme="dark"] .issues-section .confirmed-row td { background: #14321f; }
 html[data-theme="dark"] .issues-section .deleted-row td { background: #1e293b; color: var(--muted); }
 html[data-theme="dark"] .issues-section .btn.text.danger:hover { background: #450a0a; }
