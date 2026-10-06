@@ -2610,7 +2610,7 @@ def _build_email_content(salary_data: dict, community: str, name: str) -> str:
         return '<p>暂无工资数据</p>'
     
     # 构建表头和数据行
-    headers_html = ''.join(f'<th style="padding: 8px 12px; border: 1px solid #ddd; background-color: #f5f5f5; white-space: nowrap;">{html.escape(key)}</th>' for key, _ in valid_fields)
+    headers_html = ''.join(f'<th style="padding: 10px 14px; border: 1px solid #ddd; background-color: #f5f5f5; white-space: nowrap; font-size: 14px;">{html.escape(key)}</th>' for key, _ in valid_fields)
     
     cells_html = ''
     for key, value in valid_fields:
@@ -2635,10 +2635,10 @@ def _build_email_content(salary_data: dict, community: str, name: str) -> str:
                 bg_color = ''
                 font_weight = 'normal'
             
-            td_style = f'style="padding: 8px 12px; border: 1px solid #ddd; {bg_color} color: {color}; font-weight: {font_weight}; white-space: nowrap;"'
+            td_style = f'style="padding: 10px 14px; border: 1px solid #ddd; {bg_color} color: {color}; font-weight: {font_weight}; white-space: nowrap; font-size: 14px;"'
             cells_html += f'<td {td_style}>¥{html.escape(value)}</td>'
         else:
-            cells_html += f'<td style="padding: 8px 12px; border: 1px solid #ddd; white-space: nowrap;">{html.escape(value)}</td>'
+            cells_html += f'<td style="padding: 10px 14px; border: 1px solid #ddd; white-space: nowrap; font-size: 14px;">{html.escape(value)}</td>'
     
     html_content = f"""
     <div style="font-family: Arial, sans-serif; max-width: 100%; margin: 0 auto; overflow-x: auto;">
@@ -2648,8 +2648,7 @@ def _build_email_content(salary_data: dict, community: str, name: str) -> str:
             <tr>{cells_html}</tr>
         </table>
         <p style="margin-top: 20px; color: #666; font-size: 14px;">
-            此邮件由系统自动发送，请勿直接回复。<br>
-            如有疑问请联系财务部门。
+            此邮件由系统自动发送，请勿直接回复。
         </p>
     </div>
     """

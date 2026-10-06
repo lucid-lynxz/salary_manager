@@ -3285,7 +3285,7 @@ async function showImportDetail(importId) {
             <th>邮箱</th>
             <th style="width:150px">发件人邮箱</th>
             <th style="width:140px">发送时间</th>
-            <th style="width:80px">操作</th>
+            <th style="width:80px" class="freeze-action">操作</th>
         </tr></thead>`;
 
         function formatSendTime(sentAt) {
@@ -3312,7 +3312,7 @@ async function showImportDetail(importId) {
                 <td class="email-cell" data-email="${escapeHtml(rec.email || '')}" data-person-id="${rec.person_id}">${hasEmail ? escapeHtml(rec.email) : '<span class="email-missing">双击编辑邮箱</span>'}</td>
                 <td>${escapeHtml(rec.sender_email || '-')}</td>
                 <td>${formatSendTime(rec.email_sent_at)}</td>
-                <td>
+                <td class="freeze-action">
                     <button class="btn small text" data-resend-person="${rec.person_id}" 
                         ${!hasEmail ? 'disabled title="无邮箱"' : ''}>
                         发送
