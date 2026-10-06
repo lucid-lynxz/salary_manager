@@ -3257,10 +3257,10 @@ async function showImportDetail(importId) {
         }
 
         // 计算发送进度
-        const sentCount = records.filter(rec => rec.email_sent_at && rec.email_send_status === 'success').length;
-        const failedCount = records.filter(rec => rec.email_send_status === 'failed').length;
-        const pendingCount = records.filter(rec => !rec.email_sent_at || (rec.email_send_status !== 'success' && rec.email_send_status !== 'failed')).length;
-        const hasRetryable = failedCount > 0 || pendingCount > 0;
+        const sentCount = records.filter(rec => rec.email_sent_at).length;
+        const failedCount = 0; // 详情对话框不区分失败状态，统一视为待发送
+        const pendingCount = records.length - sentCount;
+        const hasRetryable = pendingCount > 0;
 
         const progressHtml = `<div class="send-progress-summary">
             <span class="progress-text">已发送 <strong>${sentCount}/${records.length}</strong></span>
@@ -3370,14 +3370,14 @@ async function showImportDetail(importId) {
             const resendBtn = body.querySelector('.resend-failed-btn');
             if (resendBtn) {
                 resendBtn.addEventListener('click', async () => {
-                    const confirmed = await confirmModal(`确定要重新发送失败的工资单吗？\n\n将重发 ${failedCount + pendingCount} 条记录（失败 ${failedCount} 条，待发送 ${pendingCount} 条）`);
+                    const confirmed = await confirmModal(`确定要重新发送未发送的工资单吗？\n\n将发送 ${pendingCount} 条记录`);
                     if (!confirmed) return;
                     
                     // 关闭详情对话框
                     hide($('#modal'));
                     
-                    // 执行批量重发
-                    executeImportSend(importId, 'failed', r.year, r.month, false);
+                    // 执行批量发送（全部模式，但只发送未发送的记录）
+                    executeImportSend(importId, 'all', r.year, r.month, sentCount === 0);
                 });
             }
 
