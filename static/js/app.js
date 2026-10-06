@@ -1972,6 +1972,10 @@ function renderValidation() {
     const el = $('#email-validation');
     const vs = state.email.validationState;
     if (!vs) { hide(el); return; }
+    
+    // 重新计算有效/无效计数（基于当前 confirmedRows）
+    rebuildValidationState();
+    
     show(el);
     const ov = state.email.overrides || {};
     const editing = state.email.editing;
