@@ -1261,6 +1261,19 @@ html[data-theme="dark"] .sender-status-badge.disabled {
     border-top: 1px solid var(--border);
 }
 
+.sender-card-actions .btn.small.text.danger {
+    background: transparent;
+    color: var(--danger);
+}
+
+.sender-card-actions .btn.small.text.danger:hover {
+    background: #fef2f2;
+}
+
+html[data-theme="dark"] .sender-card-actions .btn.small.text.danger:hover {
+    background: #450a0a;
+}
+
 .loading-text,
 .empty-text,
 .error-text {
