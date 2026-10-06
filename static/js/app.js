@@ -2598,6 +2598,18 @@ async function fetchSearchSuggestions() {
 function selectSuggestion(item) {
     clearTimeout(searchSuggestTimer);
     $('#search-input').value = item.name;
+    // 同步更新社区下拉框为该人员所属社区
+    const communitySel = $('#search-community');
+    if (communitySel && item.community) {
+        // 确保下拉框里有这个选项，没有就动态加一条
+        if (![...communitySel.options].some(o => o.value === item.community)) {
+            const opt = document.createElement('option');
+            opt.value = item.community;
+            opt.textContent = item.community;
+            communitySel.appendChild(opt);
+        }
+        communitySel.value = item.community;
+    }
     hide($('#search-suggestions'));
     $('#search-btn').click();
 }
@@ -2791,7 +2803,7 @@ async function showPersonDetail(id, year, month) {
         });
         
         // 过滤掉弹框标题已显示的冗余字段
-        const skipFields = {'序号', '姓名', '社区'};
+        const skipFields = new Set(['序号', '姓名', '社区']);
         const filteredCols = detailCols.filter(col => !skipFields.has(col));
         
         html += `<table class="search-results-table"><thead><tr>`;
@@ -3313,7 +3325,8 @@ async function showImportDetail(importId) {
                 ${detailCols.map((col, i) => {
                     const cls = freezeClass(i);
                     const v = (rec.detail || {})[col];
-                    return `<td${cls ? ` class="${cls}"` : ''}>${escapeHtml(v == null ? '' : String(v))}</td>`;
+                    const formatted = formatDateTime(v);
+                    return `<td${cls ? ` class="${cls}"` : ''}>${escapeHtml(formatted == null ? '' : String(formatted))}</td>`;
                 }).join('')}
                 <td class="email-cell" data-email="${escapeHtml(rec.email || '')}" data-person-id="${rec.person_id}">${hasEmail ? escapeHtml(rec.email) : '<span class="email-missing">双击编辑邮箱</span>'}</td>
                 <td>${escapeHtml(rec.sender_email || '-')}</td>
@@ -4070,15 +4083,14 @@ async function deleteSender(id, email) {
     }
 }
 
-function formatDateTime(dateStr) {
-    if (!dateStr) return '';
-    const date = new Date(dateStr.replace(' ', 'T'));
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    const hours = String(date.getHours()).padStart(2, '0');
-    const minutes = String(date.getMinutes()).padStart(2, '0');
-    return `${year}-${month}-${day} ${hours}:${minutes}`;
+function formatDateTime(value) {
+    if (!value) return '';
+    const str = String(value);
+    // 如果包含时间部分且为 00:00:00，只显示日期
+    if (str.includes(' 00:00:00')) {
+        return str.split(' ')[0];
+    }
+    return str;
 }
 
 // Load senders when tab is activated
