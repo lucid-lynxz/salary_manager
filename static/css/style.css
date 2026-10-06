@@ -1576,11 +1576,11 @@ html[data-theme="dark"] .status-badge.status-invalid {
 }
 
 .send-progress {
-    padding: 16px;
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    margin-bottom: 20px;
+    padding: 12px 16px;
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    margin-bottom: 12px;
 }
 
 .progress-bar-container {
