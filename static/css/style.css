@@ -623,23 +623,10 @@ html[data-theme="dark"] .send-progress-complete {
     gap: 12px;
     margin-top: -4px;
     margin-bottom: 16px;
-    font-size: 14px;
-}
-
-.send-progress-summary .progress-text {
-    color: var(--text);
-}
-
-.send-progress-summary .progress-text strong {
-    color: var(--primary);
 }
 
 .send-progress-summary .resend-failed-btn {
     margin-left: auto;
-}
-
-html[data-theme="dark"] .send-progress-summary .progress-text strong {
-    color: #60a5fa;
 }
 
 html[data-theme="dark"] .send-progress-partial {

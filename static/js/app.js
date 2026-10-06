@@ -3246,9 +3246,15 @@ async function showImportDetail(importId) {
         let pageSize = 20;
         let currentPage = 1;
 
+        // 计算发送进度
+        const sentCount = records.filter(rec => rec.email_sent_at).length;
+        const failedCount = 0; // 详情对话框不区分失败状态，统一视为待发送
+        const pendingCount = records.length - sentCount;
+        const hasRetryable = pendingCount > 0;
+
         const metaHtml = `<h2>${r.year}年${r.month}月 导入数据</h2>
             <p style="color:var(--muted);margin-top:-8px;font-size:13px">
-                工资表：${escapeHtml(r.salary_filename || '-')} | 邮箱表：${escapeHtml(r.email_filename || '-')} | 共 <strong>${records.length}</strong> 条记录
+                工资表：${escapeHtml(r.salary_filename || '-')} | 邮箱表：${escapeHtml(r.email_filename || '-')} | 共 <strong>${records.length}</strong> 条记录 | 已发送 <strong>${sentCount}/${records.length}</strong>
             </p>`;
 
         if (!records.length) {
@@ -3256,16 +3262,9 @@ async function showImportDetail(importId) {
             return;
         }
 
-        // 计算发送进度
-        const sentCount = records.filter(rec => rec.email_sent_at).length;
-        const failedCount = 0; // 详情对话框不区分失败状态，统一视为待发送
-        const pendingCount = records.length - sentCount;
-        const hasRetryable = pendingCount > 0;
-
-        const progressHtml = `<div class="send-progress-summary">
-            <span class="progress-text">已发送 <strong>${sentCount}/${records.length}</strong></span>
-            ${hasRetryable ? `<button class="btn small danger resend-failed-btn" data-action="resend-failed">失败重发</button>` : ''}
-        </div>`;
+        const progressHtml = hasRetryable ? `<div class="send-progress-summary">
+            <button class="btn small danger resend-failed-btn" data-action="resend-failed">失败重发</button>
+        </div>` : '';
 
         // 列顺序完全跟工资表（detailCols）一致，最后加邮箱列
         // 找出社区/姓名在 detailCols 中的索引用于冻结
