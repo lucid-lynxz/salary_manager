@@ -2596,11 +2596,14 @@ def _build_email_content(salary_data: dict, community: str, name: str) -> str:
     # 定义需要高亮显示的汇总字段（保持原有样式）
     highlight_fields = {'应发合计', '扣款合计', '实发合计', 'gross_salary', 'total_deduction', 'net_salary'}
     
+    # 定义不需要在邮件中显示的字段
+    skip_fields = {'序号', '姓名', '社区', 'row_number'}
+    
     # 构建表格行
     rows_html = ""
     for key, value in salary_data.items():
-        # 跳过内部字段和空值
-        if key.startswith('_') or value is None or value == '':
+        # 跳过内部字段、空值和不需要显示的字段
+        if key.startswith('_') or value is None or value == '' or key in skip_fields:
             continue
         
         # 格式化金额显示
