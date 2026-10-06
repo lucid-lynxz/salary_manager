@@ -2781,7 +2781,7 @@ async function showPersonDetail(id, year, month) {
     if (!history.length) {
         html += '<p>暂无历史记录。</p>';
     } else {
-        // 列顺序以最新一次导入的 detail keys 为准；补充其它历史记录中存在的列
+        // 收集所有列并过滤冗余字段
         const detailCols = [...(r.detail_keys || [])];
         const seen = new Set(detailCols);
         history.forEach(h => {
@@ -2789,39 +2789,22 @@ async function showPersonDetail(id, year, month) {
                 if (!seen.has(k)) { seen.add(k); detailCols.push(k); }
             });
         });
-        // 找出社区/姓名索引用于冻结列
-        const communityIdx = detailCols.indexOf('社区');
-        const nameIdx = detailCols.indexOf('姓名');
-        const freezeClass = (i) => {
-            if (i === communityIdx) return 'freeze-1';
-            if (i === nameIdx) return 'freeze-2';
-            return '';
-        };
         
-        // 格式化日期时间，去掉 00:00:00
-        function formatDateTime(value) {
-            if (!value) return '';
-            const str = String(value);
-            // 如果包含时间部分且为 00:00:00，只显示日期
-            if (str.includes(' 00:00:00')) {
-                return str.split(' ')[0];
-            }
-            return str;
-        }
+        // 过滤掉弹框标题已显示的冗余字段
+        const skipFields = {'序号', '姓名', '社区'};
+        const filteredCols = detailCols.filter(col => !skipFields.has(col));
         
         html += `<table class="search-results-table"><thead><tr>`;
-        detailCols.forEach((col, i) => {
-            const cls = freezeClass(i);
-            html += `<th${cls ? ` class="${cls}"` : ''}>${escapeHtml(col)}</th>`;
+        filteredCols.forEach((col) => {
+            html += `<th>${escapeHtml(col)}</th>`;
         });
         html += `<th>年月</th><th>邮箱</th></tr></thead><tbody>`;
         history.forEach(h => {
             html += `<tr>`;
-            detailCols.forEach((col, i) => {
-                const cls = freezeClass(i);
+            filteredCols.forEach((col) => {
                 const v = (h.detail || {})[col];
                 const formatted = formatDateTime(v);
-                html += `<td${cls ? ` class="${cls}"` : ''}>${escapeHtml(formatted == null ? '' : String(formatted))}</td>`;
+                html += `<td>${escapeHtml(formatted == null ? '' : String(formatted))}</td>`;
             });
             html += `<td>${h.year}年${h.month}月</td><td>${escapeHtml(r.email || '-')}</td></tr>`;
         });
