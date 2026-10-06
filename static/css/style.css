@@ -868,6 +868,7 @@ html[data-theme="dark"] .confirm-modal-box {
     width: 95vw;
     overflow: hidden;
 }
+html[data-theme="dark"] .modal-content { background: #1e293b; color: var(--text); }
 html[data-theme="dark"] .import-detail-modal .modal-content { background: #1e293b; }
 .import-detail-wrap {
     overflow: auto;
