@@ -2413,16 +2413,18 @@ def api_import_send(import_id):
             
             # 根据模式获取待发送人员
             if mode == "failed":
-                # 仅重发失败的
+                # 重发失败 + 待发送的记录
                 persons = conn.execute("""
                     SELECT p.id, p.community, p.name, p.email, sr.data_json
                     FROM persons p
                     LEFT JOIN salary_records sr ON sr.person_id = p.id AND sr.import_id = p.import_id
-                    WHERE p.import_id = ? AND p.email_send_status = 'failed' AND p.email IS NOT NULL AND p.email != ''
+                    WHERE p.import_id = ? 
+                      AND p.email IS NOT NULL AND p.email != ''
+                      AND (p.email_send_status = 'failed' OR p.email_send_status = 'pending')
                     ORDER BY p.id
                 """, (import_id,)).fetchall()
             else:
-                # 全部重发（包括pending和已发送的）
+                # 全部重发（包括pending、failed和已发送的）
                 persons = conn.execute("""
                     SELECT p.id, p.community, p.name, p.email, sr.data_json
                     FROM persons p

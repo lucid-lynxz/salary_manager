@@ -2979,14 +2979,14 @@ async function handleImportSend(importId, year, month) {
                            `待发送: ${details.pending} 条<br><br>` +
                            `请选择操作：`;
             
-            // 使用自定义对话框
-            const choice = await showResendConfirmDialog(message);
+            // 使用自定义对话框（传入失败和待发送数量）
+            const choice = await showResendConfirmDialog(message, details.failed, details.pending);
             
             if (choice === 'all') {
                 // 全部重发
                 await executeImportSend(importId, 'all', year, month, false);
             } else if (choice === 'failed') {
-                // 仅失败重发
+                // 重发失败+待发送
                 await executeImportSend(importId, 'failed', year, month, false);
             }
             // choice === 'cancel' 则不做任何操作
@@ -3007,10 +3007,28 @@ async function handleImportSend(importId, year, month) {
     }
 }
 
-function showResendConfirmDialog(message) {
+function showResendConfirmDialog(message, failedCount, pendingCount) {
+    const hasRetryable = (failedCount || 0) > 0 || (pendingCount || 0) > 0;
+    
     return new Promise((resolve) => {
         const modal = document.createElement('div');
         modal.className = 'modal';
+        
+        // 根据是否有可重发记录，决定按钮布局
+        let buttonsHtml;
+        if (hasRetryable) {
+            buttonsHtml = `
+                <button class="btn" id="resend-cancel-btn">取消</button>
+                <button class="btn primary" id="resend-failed-btn">失败重发</button>
+                <button class="btn danger" id="resend-all-btn">全部重发</button>
+            `;
+        } else {
+            buttonsHtml = `
+                <button class="btn" id="resend-cancel-btn">取消</button>
+                <button class="btn danger" id="resend-all-btn">全部重发</button>
+            `;
+        }
+        
         modal.innerHTML = `
             <div class="modal-content" style="max-width: 450px;">
                 <div class="modal-header">
@@ -3021,9 +3039,7 @@ function showResendConfirmDialog(message) {
                     <p>${message}</p>
                 </div>
                 <div class="modal-footer" style="display: flex; gap: 8px; justify-content: flex-end; padding: 16px 20px; border-top: 1px solid var(--border);">
-                    <button class="btn" id="resend-cancel-btn">取消</button>
-                    <button class="btn primary" id="resend-failed-btn">失败重发</button>
-                    <button class="btn danger" id="resend-all-btn">全部重发</button>
+                    ${buttonsHtml}
                 </div>
             </div>
         `;
@@ -3035,10 +3051,13 @@ function showResendConfirmDialog(message) {
             resolve('cancel');
         });
         
-        modal.querySelector('#resend-failed-btn').addEventListener('click', () => {
-            modal.remove();
-            resolve('failed');
-        });
+        const failedBtn = modal.querySelector('#resend-failed-btn');
+        if (failedBtn) {
+            failedBtn.addEventListener('click', () => {
+                modal.remove();
+                resolve('failed');
+            });
+        }
         
         modal.querySelector('#resend-all-btn').addEventListener('click', () => {
             modal.remove();
