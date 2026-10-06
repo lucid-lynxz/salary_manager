@@ -2116,6 +2116,16 @@ def api_export_import(import_id):
         
         # 写入数据
         center_alignment = Alignment(horizontal="center", vertical="center")
+        def normalize_cell_value(value):
+            """把日期中冗余的 00:00:00 时间部分去掉。"""
+            if isinstance(value, str):
+                # 1995-05-01 00:00:00 或 1995-05-01T00:00:00
+                value = re.sub(r'(\d{4}-\d{2}-\d{2})[ T]00:00:00$', r'\1', value)
+            elif isinstance(value, datetime.datetime):
+                if value.hour == 0 and value.minute == 0 and value.second == 0:
+                    value = value.date()
+            return value
+
         for row_idx, row in enumerate(rows, 2):
             community, name, email, data_json = row
             detail = json.loads(data_json) if data_json else {}
@@ -2130,6 +2140,7 @@ def api_export_import(import_id):
                 else:
                     value = detail.get(header, "")
                 
+                value = normalize_cell_value(value)
                 cell = ws.cell(row=row_idx, column=col_idx, value=value)
                 cell.alignment = center_alignment
                 cell.border = thin_border
