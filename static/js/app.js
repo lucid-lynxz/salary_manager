@@ -2815,6 +2815,16 @@ async function showPersonDetail(id, year, month) {
         html += `</tbody></table>`;
     }
     body.innerHTML = html;
+    
+    // 为表格添加横向滚动容器
+    const table = body.querySelector('.search-results-table');
+    if (table) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'detail-table-scroll';
+        table.parentNode.insertBefore(wrapper, table);
+        wrapper.appendChild(table);
+    }
+    
     show($('#modal'));
 }
 

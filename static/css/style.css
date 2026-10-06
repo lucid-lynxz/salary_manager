@@ -1051,6 +1051,13 @@ html[data-theme="dark"] .import-detail-modal .modal-content { background: #1e293
     font-weight: 500;
 }
 
+/* 人员查询明细表格横向滚动 */
+.detail-table-scroll {
+    overflow-x: auto;
+    max-width: 100%;
+    margin-top: 16px;
+}
+
 .search-results-table {
     width: 100%;
     border-collapse: collapse;

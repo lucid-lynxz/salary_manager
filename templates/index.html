@@ -50,7 +50,6 @@
                 <button class="tab-btn" data-tab="search">人员查询</button>
                 <button class="tab-btn" data-tab="history">导入历史</button>
                 <button class="tab-btn" data-tab="senders">发件人管理</button>
-                <button class="tab-btn" data-tab="send-emails">发送邮件</button>
             </nav>
         </header>
 
@@ -274,65 +273,6 @@
                     </div>
                     <div id="senders-list" class="senders-list">
                         <p class="loading-text">加载中...</p>
-                    </div>
-                </div>
-            </section>
-
-            <!-- 发送邮件 -->
-            <section id="tab-send-emails" class="tab-panel">
-                <div class="send-emails-panel">
-                    <h2>批量发送工资单邮件</h2>
-                    
-                    <div class="form-group">
-                        <label>选择导入批次</label>
-                        <select id="send-import-select">
-                            <option value="">请选择导入批次</option>
-                        </select>
-                    </div>
-
-                    <div id="send-preview-area" class="send-preview hidden">
-                        <div class="preview-header">
-                            <h3>发送预览</h3>
-                            <div class="preview-stats">
-                                <span>总人数: <strong id="preview-total">0</strong></span>
-                                <span>有效邮箱: <strong id="preview-valid">0</strong></span>
-                                <span>无效邮箱: <strong id="preview-invalid">0</strong></span>
-                            </div>
-                        </div>
-                        
-                        <div class="preview-table-container">
-                            <table class="preview-table">
-                                <thead>
-                                    <tr>
-                                        <th><input type="checkbox" id="select-all-rows" checked></th>
-                                        <th>社区</th>
-                                        <th>姓名</th>
-                                        <th>邮箱</th>
-                                        <th>状态</th>
-                                    </tr>
-                                </thead>
-                                <tbody id="preview-tbody">
-                                </tbody>
-                            </table>
-                        </div>
-
-                        <div class="send-actions">
-                            <button class="btn primary" id="start-send-btn" onclick="startBatchSend()">开始发送</button>
-                            <button class="btn text" onclick="resetSendStatus()">重置发送状态</button>
-                        </div>
-
-                        <div id="send-progress-area" class="send-progress hidden">
-                            <div class="progress-bar-container">
-                                <div class="progress-bar" id="send-progress-bar"></div>
-                            </div>
-                            <div class="progress-text" id="send-progress-text">准备发送...</div>
-                            <div class="progress-details" id="send-progress-details"></div>
-                        </div>
-
-                        <div id="send-results" class="send-results hidden">
-                            <h3>发送结果</h3>
-                            <div id="send-results-content"></div>
-                        </div>
                     </div>
                 </div>
             </section>
