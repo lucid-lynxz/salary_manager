@@ -2621,45 +2621,39 @@ def _build_email_content(salary_data: dict, community: str, name: str) -> str:
         return '<p>暂无工资数据</p>'
 
     # ============================================================
-    # 邮件客户端（尤其 QQ 邮箱）会过滤几乎所有 CSS 样式，
-    # 必须用 <font size="6"> 这种 HTML 属性才能生效。
-    # 三重保险：
-    #   1) 每个文本用 <font size="6"> 包裹 —— HTML 属性，无法被过滤
-    #   2) 同时保留 span+!important 作为次级兜底
-    #   3) td/th 自身也声明 style 里的 font-size
+    # QQ 邮箱桌面端对表格内的 CSS 清洗极狠：
+    #   - td/th 上的 font-size style 可能被覆盖
+    #   - span / big 标签可能被剥掉
+    #   - 嵌套的 font 标签可能被展平
+    # 最可靠做法：
+    #   1) td/th 自身用 style="font-size: 16pt" —— pt 单位邮件客户端更认
+    #   2) td/th 内部只留 <font size="6"> —— 无任何额外嵌套
+    #   3) table 根元素也声明 font-size 作为继承兜底
     # ============================================================
+    FONT_SIZE_PT = '16pt'           # 邮件客户端认 pt
     FONT_SIZE_PX = '20px'
-    FONT_SIZE_PT = '16pt'          # 邮件客户端更认 pt 单位
-    FONT_SIZE_ATTR = '6'           # <font size="6"> ≈ 24px
-    FONT_FAMILY_CSS = "'PingFang SC', 'Microsoft YaHei', Arial, sans-serif"
-    FONT_FAMILY_FACE = '"Microsoft YaHei", Arial'  # face 属性不用引号，逗号分隔
+    FONT_SIZE_ATTR = '6'            # <font size="6"> ≈ 24px
+    FONT_ATTR = 'Microsoft YaHei'   # face 属性不用引号
     
-    def wrap_text(text, color_style='', bold=False):
-        """四层包裹：font tag + span !important + big 标签 + text。"""
-        extra = ''
-        if bold: extra += ' font-weight: 700;'
-        if color_style: extra += f' color: {color_style};'
-        return (
-            f'<font size="{FONT_SIZE_ATTR}" face="{FONT_FAMILY_FACE}">'
-            f'<span style="font-size: {FONT_SIZE_PX} !important; font-family: {FONT_FAMILY_CSS};{extra}">'
-            f'<big><big>{text}</big></big>'
-            f'</span></font>'
-        )
+    def wrap_text(text):
+        """最小化包裹：只留一个 <font size>，QQ 邮箱无法剥掉 HTML 属性。"""
+        return f'<font size="{FONT_SIZE_ATTR}" face="{FONT_ATTR}">{text}</font>'
 
+    # td/th 自身也声明 font-size（pt 优先，px 兜底）
     th_base = (
         'padding: 14px 18px; border: 1px solid #bbb; background-color: #f0f0f0; '
         'white-space: nowrap; font-weight: 700; text-align: center; '
-        f'font-size: {FONT_SIZE_PX}; font-family: {FONT_FAMILY_CSS};'
+        f'font-size: {FONT_SIZE_PT}; font-family: {FONT_ATTR};'
     )
     td_base = (
         'padding: 14px 18px; border: 1px solid #bbb; white-space: nowrap; text-align: center; '
-        f'font-size: {FONT_SIZE_PX}; font-family: {FONT_FAMILY_CSS};'
+        f'font-size: {FONT_SIZE_PT}; font-family: {FONT_ATTR};'
     )
     
     # 构建表头
     headers_html = ''
     for key, _ in valid_fields:
-        headers_html += f'<th style="{th_base}">{wrap_text(html.escape(key), bold=True)}</th>'
+        headers_html += f'<th style="{th_base}">{wrap_text(html.escape(key))}</th>'
     
     # 构建数据行
     cells_html = ''
@@ -2681,23 +2675,24 @@ def _build_email_content(salary_data: dict, community: str, name: str) -> str:
                 bg = ''
             
             td_style = f'{td_base} {bg} color: {color}; font-weight: 700;'
-            cells_html += f'<td style="{td_style}">{wrap_text("¥" + html.escape(value), color, bold=True)}</td>'
+            # 金额要加粗，color 直接写在 font tag 里（font 支持 color 属性和 style）
+            cells_html += f'<td style="{td_style}">{wrap_text("¥" + html.escape(value))}</td>'
         else:
             cells_html += f'<td style="{td_base}">{wrap_text(html.escape(value))}</td>'
     
     html_content = f"""
     <!DOCTYPE html>
     <html><head><meta charset="utf-8"></head>
-    <body style="margin:0;padding:0;font-family:{FONT_FAMILY_CSS};font-size:{FONT_SIZE_PX};">
-        <h2 style="color:#333;font-size:26px;font-weight:700;margin:0 0 18px 0;font-family:{FONT_FAMILY_CSS};">
-            <font size="7" face="{FONT_FAMILY_FACE}">{html.escape(community)} · {html.escape(name)} 工资单</font>
+    <body style="margin:0;padding:0;">
+        <h2 style="color:#333;font-size:26px;font-weight:700;margin:0 0 18px 0;font-family:{FONT_ATTR};">
+            <font size="7" face="{FONT_ATTR}">{html.escape(community)} · {html.escape(name)} 工资单</font>
         </h2>
-        <table style="width:100%;border-collapse:collapse;margin-top:14px;font-size:{FONT_SIZE_PX};font-family:{FONT_FAMILY_CSS};">
+        <table style="width:100%;border-collapse:collapse;margin-top:14px;font-size:{FONT_SIZE_PT};font-family:{FONT_ATTR};">
             <tr>{headers_html}</tr>
             <tr>{cells_html}</tr>
         </table>
-        <p style="margin-top:24px;color:#666;font-size:14px;font-family:{FONT_FAMILY_CSS};">
-            <font size="4" face="{FONT_FAMILY_FACE}">此邮件由系统自动发送，请勿直接回复。</font>
+        <p style="margin-top:24px;color:#666;font-family:{FONT_ATTR};">
+            <font size="4" face="{FONT_ATTR}">此邮件由系统自动发送，请勿直接回复。</font>
         </p>
     </body></html>
     """
