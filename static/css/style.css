@@ -1330,6 +1330,17 @@ html[data-theme="dark"] .modal-large {
     border-color: #334155;
 }
 
+/* 隐藏数字输入框的增减按钮 */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+input[type="number"] {
+    -moz-appearance: textfield;
+}
+
 /* Tooltip icon - 使用浏览器原生 title 属性 */
 .tooltip-icon {
     display: inline-flex;
