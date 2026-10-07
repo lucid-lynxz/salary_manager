@@ -677,6 +677,8 @@ html[data-theme="dark"] .send-progress-partial {
     align-items: center;
     z-index: 100;
 }
+/* 图表弹框第二层，覆盖在明细弹框之上 */
+#chart-modal { z-index: 200; }
 .modal-content {
     background: #fff;
     width: 90%;

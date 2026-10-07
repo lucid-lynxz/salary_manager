@@ -379,6 +379,14 @@
         </div>
     </div>
 
+    <!-- 图表弹框（独立第二层，不覆盖其他弹框） -->
+    <div id="chart-modal" class="modal hidden">
+        <div class="modal-content import-detail-modal">
+            <span class="close-btn" onclick="closeChartModal()">&times;</span>
+            <div id="chart-modal-body"></div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <script src="/static/js/app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>

@@ -370,8 +370,12 @@ function isNumericCell(val) {
     if (!s) return false;
     // 日期值不算数值列
     if (/^\d{4}[-/年.]\d{1,2}[-/月.]\d{1,2}日?$/.test(s)) return false;
+    // 带"年/月/日"等中文文字的不算（如"19年10个月"）
+    if (/[年月日时周]/.test(s)) return false;
     // 银行账号：纯数字但太长，不算数值列
     if (/^\d{14,}$/.test(s)) return false;
+    // 必须整体是纯数字（允许 . - 空格千分位）
+    if (!/^-?[\d]?[\d,]*\.?\d*$/.test(s)) return false;
     const n = parseFloat(s);
     return !isNaN(n) && isFinite(n);
 }
@@ -693,10 +697,9 @@ function showPersonHistoryChart(timeAscHistory, colName, personLabel) {
         changes.push({ diff, pct });
     }
 
-    // 渲染模态框
-    const body = $('#modal-body');
+    // 渲染到独立的图表模态框（不覆盖明细弹框）
+    const body = $('#chart-modal-body');
     if (_chartInstance) { _chartInstance.destroy(); _chartInstance = null; }
-    $('#modal').classList.add('import-detail-modal');
 
     body.innerHTML = `
         <h2>${escapeHtml(personLabel)} · ${escapeHtml(colName)} 历史趋势</h2>
@@ -712,7 +715,7 @@ function showPersonHistoryChart(timeAscHistory, colName, personLabel) {
             <canvas id="col-chart"></canvas>
         </div>
     `;
-    show($('#modal'));
+    show($('#chart-modal'));
 
     const canvas = document.getElementById('col-chart');
     if (canvas && window.Chart) {
@@ -856,6 +859,21 @@ function showPersonHistoryChart(timeAscHistory, colName, personLabel) {
         });
     }
 }
+
+function closeChartModal() {
+    if (_chartInstance) { _chartInstance.destroy(); _chartInstance = null; }
+    hide($('#chart-modal'));
+}
+
+// chart-modal 遮罩点击关闭
+document.addEventListener('DOMContentLoaded', () => {
+    const cm = $('#chart-modal');
+    if (cm) {
+        cm.addEventListener('click', (e) => {
+            if (e.target === cm) closeChartModal();
+        });
+    }
+});
 
 function getFreezeCols(mapping) {
     if (!mapping) return [];
@@ -3357,9 +3375,13 @@ async function showPersonDetail(id, year, month) {
                 (a.year * 12 + a.month) - (b.year * 12 + b.month)
             );
             // 数值列候选（优先匹配这些工资字段）
-            const salaryFields = ['应发', '应发合计', '代扣', '代扣合计', '实发', '实发合计', '工资', 'gross', 'deduction', 'net', '工资'];
+            const salaryFields = ['应发', '应发合计', '代扣', '代扣合计', '实发', '实发合计', '工资', 'gross', 'deduction', 'net', '工资', '保险', '公积金', '所得税'];
+            // 明确排除的非数值列（即使值是数字也不画折线图）
+            const excludeFields = ['岗位等级', '岗位', '序号', '领款人帐号', '领款人账号', '银行账号', '银行帐号', '岗位工资等级年限起算时间', '统计时点', '调资居龄'];
             const headerCells = table.querySelectorAll('thead th');
             filteredCols.forEach((col, ci) => {
+                // 先排除明确非数值的列
+                if (excludeFields.some(f => col.includes(f))) return;
                 // 检测是否为数值列：1) 名字匹配工资字段 2) 采样数据大多能 parseFloat
                 const matchSalary = salaryFields.some(f => col.includes(f));
                 let numericCount = 0, totalChecked = 0;
@@ -3370,7 +3392,8 @@ async function showPersonDetail(id, year, month) {
                         if (isNumericCell(v)) numericCount++;
                     }
                 }
-                const isNumeric = matchSalary || (totalChecked > 0 && numericCount / totalChecked >= 0.6);
+                // 阈值提高到 90%，避免"19年10个月"这类字符串 parseFloat 出数字导致误判
+                const isNumeric = matchSalary || (totalChecked > 0 && numericCount / totalChecked >= 0.9);
                 if (!isNumeric) return;
 
                 const th = headerCells[ci];
