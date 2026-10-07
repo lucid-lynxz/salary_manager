@@ -1327,6 +1327,13 @@ async function parseSalary() {
         if (res.error) { alert(res.error); return; }
         state.salary.parsed = res;
 
+        // 更新预览数据（用用户配置的表头行号重新生成）
+        if (res.preview) {
+            state.salary.preview = res.preview;
+            state.salary.previewRowIndices = res.preview_row_indices || [];
+            renderSalaryPreview();
+        }
+
         const headers = res.headers;
         const mapping = res.suggested_mapping || {};
         state.salary.mapping = mapping;

@@ -792,24 +792,34 @@ def validate_salary_records(records, headers, field_indexes_override=None, curre
     }
 
 
-def build_preview_rows(df, detected_header, head_data=5, tail_data=5, threshold=10, full_preview=False):
+def build_preview_rows(df, detected_header=None, head_data=5, tail_data=5, threshold=10, full_preview=False, header_rows=None):
     """构造预览行：表头 + 前 N 条数据 + 后 N 条数据；数据 ≤ threshold 则全显。
     当 full_preview=True 时返回全部行。
     当需要折叠时，中间插入一个省略标记行。
+    header_rows: 用户配置的表头行列表（0-based）。若提供，用于确定 header_count 和哪些行用 normalize_header。
     返回 (preview_rows, row_indices)，row_indices 对应 Excel 行号（1-based），省略行为 None。
     """
-    header_count = (detected_header + 1) if detected_header is not None else 1
+    # 确定表头范围：优先用用户配置的 header_rows，否则回退到自动检测的 detected_header
+    if header_rows:
+        header_count = max(header_rows) + 1
+        header_set = set(header_rows)
+    elif detected_header is not None:
+        header_count = detected_header + 1
+        header_set = set(range(header_count))
+    else:
+        header_count = 1
+        header_set = {0}
     data_count = max(0, len(df) - header_count)
 
-    def row_values(i, is_header=False):
-        if is_header:
+    def row_values(i):
+        if i in header_set:
             return [normalize_header(v) for v in df.iloc[i].tolist()]
         return [normalize_text(v) for v in df.iloc[i].tolist()]
 
     preview = []
     row_indices = []
     for i in range(header_count):
-        preview.append(row_values(i, is_header=True))
+        preview.append(row_values(i))
         row_indices.append(i + 1)
 
     if full_preview or data_count <= threshold:
@@ -1083,12 +1093,21 @@ def api_parse_config():
                 current_year=year, current_month=month,
             )
 
+        # 用用户配置的 header_rows 重新生成预览（确保所有表头行都走 normalize_header）
+        preview, preview_row_indices = build_preview_rows(
+            df, head_data=5, tail_data=5, threshold=10,
+            full_preview=bool(data.get("full_preview", False)),
+            header_rows=header_rows,
+        )
+
         resp = {
             "headers": headers,
             "suggested_mapping": mapping,
             "record_count": len(records),
             "sample": records[:5],
             "validation": validation,
+            "preview": preview,
+            "preview_row_indices": preview_row_indices,
         }
         if file_type == "salary":
             # 返回自动检测到的工资字段列索引，供前端预填下拉框
