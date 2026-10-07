@@ -860,6 +860,52 @@ function showPersonHistoryChart(timeAscHistory, colName, personLabel) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// 自定义 tooltip：替代原生 title，支持 hover 显示，样式更美观
+// ---------------------------------------------------------------------------
+(function initHelpTooltips() {
+    const tooltip = document.createElement('div');
+    tooltip.className = 'help-tooltip';
+    tooltip.style.cssText = 'position:fixed;z-index:9999;display:none;max-width:280px;padding:8px 12px;border-radius:6px;background:#1e293b;color:#e2e8f0;font-size:12px;line-height:1.5;box-shadow:0 4px 12px rgba(0,0,0,0.25);pointer-events:none;white-space:normal;';
+    document.body.appendChild(tooltip);
+
+    document.addEventListener('mouseover', (e) => {
+        const el = e.target.closest('.help-icon, .help-icon-big');
+        if (!el) return;
+        const title = el.getAttribute('title');
+        if (!title) return;
+        tooltip.textContent = title;
+        tooltip.style.display = 'block';
+        // 移除原生 title 防止浏览器默认提示
+        el.setAttribute('data-tip', title);
+        el.removeAttribute('title');
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (tooltip.style.display !== 'block') return;
+        const pad = 12;
+        let x = e.clientX + pad;
+        let y = e.clientY + pad;
+        const tw = tooltip.offsetWidth;
+        const th = tooltip.offsetHeight;
+        if (x + tw > window.innerWidth - 8) x = e.clientX - tw - pad;
+        if (y + th > window.innerHeight - 8) y = e.clientY - th - pad;
+        tooltip.style.left = x + 'px';
+        tooltip.style.top = y + 'px';
+    });
+
+    document.addEventListener('mouseout', (e) => {
+        const el = e.target.closest('.help-icon, .help-icon-big');
+        if (!el) return;
+        tooltip.style.display = 'none';
+        // 恢复 title 供下次使用
+        if (el.dataset.tip) {
+            el.setAttribute('title', el.dataset.tip);
+            delete el.dataset.tip;
+        }
+    });
+})();
+
 function closeChartModal() {
     if (_chartInstance) { _chartInstance.destroy(); _chartInstance = null; }
     hide($('#chart-modal'));

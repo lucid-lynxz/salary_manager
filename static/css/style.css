@@ -122,6 +122,11 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
     overflow: hidden;
     text-overflow: ellipsis;
 }
+/* 包含 help-icon 的 label 不裁剪 */
+.form-group label:has(.help-icon) {
+    overflow: visible;
+    text-overflow: unset;
+}
 .help-icon {
     display: inline-flex;
     align-items: center;
