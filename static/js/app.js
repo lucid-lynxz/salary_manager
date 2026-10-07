@@ -1288,7 +1288,7 @@ $('#salary-data-end-col').addEventListener('input', () => {
 
 // 工资字段列（银行账号 / 应发 / 代扣 / 实发）下拉框变更后重新触发解析校验
 // 注意：姓名列 / 社区列 不在此列 —— 它们未发送到后端，触发会被 suggested_mapping 覆盖
-['salary-bank-account-col', 'salary-gross-col', 'salary-deduction-col', 'salary-net-col'].forEach(id => {
+['salary-bank-account-col', 'salary-gross-col', 'salary-deduction-col', 'salary-net-col', 'salary-post-salary-col', 'salary-adjust-age-col'].forEach(id => {
     const el = $(`#${id}`);
     if (el) el.addEventListener('change', triggerParseSalary);
 });
@@ -1307,10 +1307,13 @@ async function parseSalary() {
             gross_salary: $('#salary-gross-col').value,
             total_deduction: $('#salary-deduction-col').value,
             net_salary: $('#salary-net-col').value,
+            post_salary: $('#salary-post-salary-col').value,
+            adjust_age: $('#salary-adjust-age-col').value,
         };
 
         const body = {
             file_id: state.salary.fileId,
+            filename: state.salary.filename,
             sheet_name: $('#salary-sheet').value,
             file_type: 'salary',
             header_rows: headerRows,
@@ -1336,10 +1339,14 @@ async function parseSalary() {
         const grossSel = $('#salary-gross-col').value;
         const dedSel = $('#salary-deduction-col').value;
         const netSel = $('#salary-net-col').value;
+        const postSel = $('#salary-post-salary-col').value;
+        const ageSel = $('#salary-adjust-age-col').value;
         populateSelect($('#salary-bank-account-col'), headers, bankSel !== '' ? parseInt(bankSel) : (detected.bank_account ?? -1));
         populateSelect($('#salary-gross-col'), headers, grossSel !== '' ? parseInt(grossSel) : (detected.gross_salary ?? -1));
         populateSelect($('#salary-deduction-col'), headers, dedSel !== '' ? parseInt(dedSel) : (detected.total_deduction ?? -1));
         populateSelect($('#salary-net-col'), headers, netSel !== '' ? parseInt(netSel) : (detected.net_salary ?? -1));
+        populateSelect($('#salary-post-salary-col'), headers, postSel !== '' ? parseInt(postSel) : (detected.post_salary ?? -1));
+        populateSelect($('#salary-adjust-age-col'), headers, ageSel !== '' ? parseInt(ageSel) : (detected.adjust_age ?? -1));
 
         const resultEl = $('#salary-parse-result');
         let resultHtml = `
@@ -1395,6 +1402,9 @@ function rebuildSalaryValidationState(validation) {
         vs.hasAccountField = validation.has_account_field;
         vs.hasMathFields = validation.has_math_fields;
         vs.hasPreviousData = validation.has_previous_data;
+        vs.hasPostSalaryField = validation.has_post_salary_field;
+        vs.hasAdjustAgeField = validation.has_adjust_age_field;
+        vs.adjustSalaryIssues = (validation.adjust_salary_issues || []).map(r => ({ ...r, confirmed: false, editing: false }));
         vs.allRows = (validation.all_rows || []).map(r => ({ ...r }));
     }
     state.salary.validationState = vs;
@@ -1503,8 +1513,9 @@ function updateSalaryNextButton() {
     const changedPending = vs.accountChangedGroups.some(r => !r.confirmed && !r.editing);
     const mathPending = vs.mathMismatchIssues.some(r => !r.confirmed && !r.editing);
     const emptyPending = vs.accountEmptyIssues.some(r => !r.confirmed && !r.editing);
+    const adjustPending = (vs.adjustSalaryIssues || []).some(r => !r.confirmed && !r.editing);
     const nameDup = (vs.duplicateNameGroups || []).length > 0;
-    const hasError = dupPending || changedPending || mathPending || emptyPending || nameDup;
+    const hasError = dupPending || changedPending || mathPending || emptyPending || adjustPending || nameDup;
     $('#to-step2').disabled = hasError;
     // 更新状态图标
     const icon = $('#salary-status-icon');
@@ -1605,6 +1616,7 @@ function confirmSalaryRow(groupType, groupIdx, rowIdx) {
     else if (groupType === 'changed') row = vs.accountChangedGroups[groupIdx];
     else if (groupType === 'math') row = vs.mathMismatchIssues[groupIdx];
     else if (groupType === 'empty') row = vs.accountEmptyIssues[groupIdx];
+    else if (groupType === 'adjust') row = vs.adjustSalaryIssues[groupIdx];
     if (!row || row.editing) return;
     row.confirmed = true;
     renderSalaryValidation();
@@ -1638,6 +1650,8 @@ function confirmAllSalaryGroups(groupType) {
         vs.mathMismatchIssues.forEach(r => { if (!r.editing) r.confirmed = true; });
     } else if (groupType === 'empty') {
         vs.accountEmptyIssues.forEach(r => { if (!r.editing) r.confirmed = true; });
+    } else if (groupType === 'adjust') {
+        vs.adjustSalaryIssues.forEach(r => { if (!r.editing) r.confirmed = true; });
     }
     renderSalaryValidation();
     updateSalaryNextButton();
@@ -1657,6 +1671,7 @@ function renderSalaryValidation() {
     const pendingChanged = vs.accountChangedGroups.filter(r => !r.confirmed && !r.editing).length;
     const pendingMath = vs.mathMismatchIssues.filter(r => !r.confirmed && !r.editing).length;
     const pendingEmpty = vs.accountEmptyIssues.filter(r => !r.confirmed && !r.editing).length;
+    const pendingAdjust = (vs.adjustSalaryIssues || []).filter(r => !r.confirmed && !r.editing).length;
 
     let html = '';
     // 社区+姓名重复：顶部仅保留简短警告，表格移至下方待处理异常区
@@ -1685,9 +1700,12 @@ function renderSalaryValidation() {
     if (vs.hasMathFields && pendingMath > 0) {
         html += `<div class="stat invalid">实发工资对不上：${pendingMath}</div>`;
     }
+    if (vs.hasPostSalaryField && vs.hasAdjustAgeField && pendingAdjust > 0) {
+        html += `<div class="stat invalid">调资不符37个月规则：${pendingAdjust}</div>`;
+    }
     html += `</div>`;
 
-    if (!vs.hasAccountField && !vs.hasMathFields && !vs.hasPreviousData) {
+    if (!vs.hasAccountField && !vs.hasMathFields && !vs.hasPreviousData && !vs.hasPostSalaryField) {
         html += `<p>（未检测到账号/工资计算字段，以上校验未执行）</p>`;
         el.innerHTML = html;
         return;
@@ -1822,6 +1840,30 @@ function renderSalaryValidation() {
             }
         });
         html += `</div>`;
+    }
+
+    // 调资校验（37个月应涨150元）
+    if (vs.hasPostSalaryField && vs.hasAdjustAgeField && (vs.adjustSalaryIssues || []).length > 0) {
+        html += `<div class="duplicate-section"><h4>⚠ 调资不符规则（调资居龄每满37个月，岗位工资应比上月高150元） ${pendingAdjust > 0 ? `<button class="btn small" data-salary-confirm-all="adjust">全部确认</button>` : ''}</h4>`;
+        html += `<table class="salary-table"><thead><tr>
+            <th>行号</th><th>社区</th><th>姓名</th><th>调资居龄</th><th>本月岗位工资</th><th>上月岗位工资</th><th>应涨至</th><th>差额</th><th>操作</th>
+        </tr></thead><tbody>`;
+        vs.adjustSalaryIssues.forEach((r, gi) => {
+            const sign = r.diff >= 0 ? '+' : '';
+            const diffColor = r.diff === 0 ? '' : (r.diff < 0 ? 'color:#dc2626' : 'color:#f59e0b');
+            html += `<tr class="${r.confirmed ? 'confirmed-row' : ''}">
+                <td>${escapeHtml(r.row)}</td>
+                <td>${escapeHtml(r.community)}</td>
+                <td>${escapeHtml(r.name)}</td>
+                <td>${escapeHtml(r.adjust_age_raw)} <span class="muted">(${r.age_months}月)</span></td>
+                <td>${fmtMoney(r.current_post_salary)}</td>
+                <td>${fmtMoney(r.previous_post_salary)} <span class="muted">(${r.previous_month})</span></td>
+                <td>${fmtMoney(r.expected_post_salary)}</td>
+                <td style="${diffColor}">${sign}${fmtMoney(r.diff)}</td>
+                <td>${r.confirmed ? '<span class="confirmed-tag">已确认</span>' : `<button class="btn small" data-salary-confirm="adjust|${gi}|-">确认</button>`}</td>
+            </tr>`;
+        });
+        html += `</tbody></table></div>`;
     }
 
     // 社区+姓名重复（可修改/删除）

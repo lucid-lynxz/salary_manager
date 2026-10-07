@@ -490,6 +490,8 @@ def detect_salary_fields(headers):
         "total_deduction": ["代扣合计", "扣款合计"],
         "net_salary": ["实发工资"],
         "bank_account": ["银行卡号", "领款人帐号", "领款人账号", "银行账号", "账号", "卡号"],
+        "post_salary": ["岗位工资"],
+        "adjust_age": ["调资居龄", "调资工龄"],
     }
     def norm(h):
         return re.sub(r"\s+", "", h)
@@ -501,6 +503,61 @@ def detect_salary_fields(headers):
                 indexes[field] = idx
                 break
     return indexes
+
+
+def parse_adjust_age_months(raw):
+    """解析调资居龄字符串为总月数。
+    支持: '19年10个月', '19年10月', '19-10', '19.10', '19/10', '19年', '19', 19.10 等。
+    返回总月数(int)或 None（无法解析）。
+    """
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, (int, float)) and not pd.isna(raw):
+        # 纯数字，可能是年数 或 年.月 格式
+        f = float(raw)
+        years = int(f)
+        months = round((f - years) * 100)
+        return years * 12 + months
+    s = normalize_text(raw)
+    if not s:
+        return None
+    # 匹配 'X年Y个月' / 'X年Y月' / 'X年'
+    m = re.search(r"(\d+)\s*年\s*(\d+)?\s*个?月?", s)
+    if m:
+        years = int(m.group(1))
+        months = int(m.group(2)) if m.group(2) else 0
+        return years * 12 + months
+    # 匹配 'X-Y' / 'X.Y' / 'X/Y'
+    m = re.match(r"^(\d+)[-/.](\d+)$", s)
+    if m:
+        return int(m.group(1)) * 12 + int(m.group(2))
+    # 纯数字 = 年数
+    m = re.match(r"^(\d+)$", s)
+    if m:
+        return int(m.group(1)) * 12
+    return None
+
+
+def get_previous_salary_for_person(community, name, before_year, before_month):
+    """查询某人在指定年月之前的最近一条工资记录的岗位工资。
+    返回 (post_salary_value, import_year, import_month) 或 (None, None, None)。
+    """
+    with get_db() as conn:
+        cur = conn.execute("""
+            SELECT sr.data_json, si.year, si.month
+            FROM salary_records sr
+            JOIN persons p ON sr.person_id = p.id
+            JOIN salary_imports si ON sr.import_id = si.id
+            WHERE p.community = ? AND p.name = ?
+              AND (si.year < ? OR (si.year = ? AND si.month < ?))
+            ORDER BY si.year DESC, si.month DESC
+            LIMIT 1
+        """, (community, name, before_year, before_year, before_month))
+        row = cur.fetchone()
+        if not row:
+            return None, None, None
+        data = json.loads(row["data_json"]) if row["data_json"] else {}
+        return data.get("岗位工资"), row["year"], row["month"]
 
 
 def get_previous_accounts():
@@ -519,9 +576,10 @@ def get_previous_accounts():
     return {(r["community"], r["name"]): (r["bank_account"] or "") for r in rows}
 
 
-def validate_salary_records(records, headers, field_indexes_override=None):
+def validate_salary_records(records, headers, field_indexes_override=None, current_year=None, current_month=None):
     """对工资记录做校验，返回 validation dict。
     field_indexes_override: 用户手动指定的列索引，若提供则优先使用，否则自动检测。
+    current_year/current_month: 当前导入的年月，用于调资校验（37个月应涨薪）。
     """
     field_indexes = {}
     if field_indexes_override:
@@ -538,6 +596,8 @@ def validate_salary_records(records, headers, field_indexes_override=None):
     has_gross = "gross_salary" in field_indexes
     has_deduction = "total_deduction" in field_indexes
     has_net = "net_salary" in field_indexes
+    has_post_salary = "post_salary" in field_indexes
+    has_adjust_age = "adjust_age" in field_indexes
 
     previous_accounts = get_previous_accounts()
 
@@ -572,6 +632,13 @@ def validate_salary_records(records, headers, field_indexes_override=None):
         if has_net:
             net = to_float(raw_row.get(headers[field_indexes["net_salary"]]))
 
+        post_salary = None
+        adjust_age_raw = None
+        if has_post_salary:
+            post_salary = to_float(raw_row.get(headers[field_indexes["post_salary"]]))
+        if has_adjust_age:
+            adjust_age_raw = raw_row.get(headers[field_indexes["adjust_age"]], "")
+
         cleaned_list.append({
             "row": r["_row_index"],
             "community": community,
@@ -582,6 +649,8 @@ def validate_salary_records(records, headers, field_indexes_override=None):
             "deduction": deduction,
             "net": net,
             "previous": previous_accounts.get((community, name), ""),
+            "post_salary": post_salary,
+            "adjust_age_raw": adjust_age_raw,
         })
 
     total_valid = len(cleaned_list)
@@ -667,6 +736,43 @@ def validate_salary_records(records, headers, field_indexes_override=None):
         })
         seen_names.add(key)
 
+    # 调资校验：调资居龄每满37个月，岗位工资应比上月高150元
+    adjust_salary_issues = []
+    if has_post_salary and has_adjust_age and current_year and current_month:
+        for c in cleaned_list:
+            age_months = parse_adjust_age_months(c.get("adjust_age_raw", ""))
+            if age_months is None or age_months <= 0:
+                continue
+            # 判断是否是调资月：37, 74, 111, ...
+            is_adjust_month = (age_months % 37 == 0)
+            if not is_adjust_month:
+                continue
+            # 查找上月岗位工资
+            prev_post_salary, prev_y, prev_m = get_previous_salary_for_person(
+                c["community"], c["name"], current_year, current_month
+            )
+            if prev_post_salary is None:
+                # 没有历史数据，无法校验
+                continue
+            cur_post_salary = c.get("post_salary")
+            if cur_post_salary is None:
+                continue
+            expected = prev_post_salary + 150
+            if abs(cur_post_salary - expected) > 0.02:
+                adjust_salary_issues.append({
+                    "row": c["row"],
+                    "community": c["community"],
+                    "name": c["name"],
+                    "adjust_age_raw": c.get("adjust_age_raw", ""),
+                    "age_months": age_months,
+                    "expected_at_months": (age_months // 37) * 37,
+                    "previous_post_salary": prev_post_salary,
+                    "current_post_salary": cur_post_salary,
+                    "expected_post_salary": expected,
+                    "diff": round(cur_post_salary - expected, 2),
+                    "previous_month": f"{prev_y}-{prev_m:02d}" if prev_y else "",
+                })
+
     return {
         "total_parsed": len(records),
         "skipped_empty": skipped_empty,
@@ -679,6 +785,9 @@ def validate_salary_records(records, headers, field_indexes_override=None):
         "account_changed_groups": account_changed,
         "account_empty_issues": account_empty,
         "has_previous_data": len(previous_accounts) > 0,
+        "has_post_salary_field": has_post_salary,
+        "has_adjust_age_field": has_adjust_age,
+        "adjust_salary_issues": adjust_salary_issues,
         "all_rows": cleaned_list,
     }
 
@@ -961,7 +1070,16 @@ def api_parse_config():
             }
 
         if file_type == "salary":
-            validation = validate_salary_records(records, headers, field_indexes_override=salary_field_mapping)
+            # 从文件名提取年月，用于调资校验
+            filename = data.get("filename") or ""
+            year, month = extract_date_from_filename(filename)
+            # 也尝试从表头提取
+            if not year or not month:
+                year, month = extract_salary_date(df)
+            validation = validate_salary_records(
+                records, headers, field_indexes_override=salary_field_mapping,
+                current_year=year, current_month=month,
+            )
 
         resp = {
             "headers": headers,
