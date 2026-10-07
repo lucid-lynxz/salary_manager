@@ -1,4 +1,4 @@
-:root {
+﻿:root {
     --primary: #2563eb;
     --primary-dark: #1d4ed8;
     --danger: #dc2626;
@@ -139,7 +139,7 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
     font-size: 10px;
     font-weight: 700;
     line-height: 1;
-    cursor: help;
+    cursor: pointer;
     margin-left: 4px;
     transition: background 0.15s, color 0.15s;
 }
@@ -159,7 +159,7 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
     font-size: 13px;
     font-weight: 700;
     line-height: 1;
-    cursor: help;
+    cursor: pointer;
     transition: background 0.15s, color 0.15s;
 }
 .help-icon-big:hover {
@@ -1679,7 +1679,7 @@ input[type="number"] {
     border-radius: 50%;
     font-size: 11px;
     font-weight: bold;
-    cursor: help;
+    cursor: pointer;
     margin-left: 4px;
     vertical-align: middle;
 }
