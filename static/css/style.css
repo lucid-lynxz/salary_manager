@@ -898,6 +898,60 @@ html[data-theme="dark"] .confirm-modal-box {
 }
 html[data-theme="dark"] .modal-content { background: #1e293b; color: var(--text); }
 html[data-theme="dark"] .import-detail-modal .modal-content { background: #1e293b; }
+
+/* 数值列图表按钮 */
+.col-chart-btn {
+    margin-left: 4px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    padding: 0 2px;
+    opacity: 0.5;
+    vertical-align: middle;
+    transition: opacity 0.15s, transform 0.15s;
+}
+.col-chart-btn:hover {
+    opacity: 1;
+    transform: scale(1.2);
+}
+th.has-chart-btn {
+    white-space: nowrap;
+}
+
+/* 图表模态框 */
+.chart-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 20px;
+}
+.stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    text-align: center;
+}
+.stat-label {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 4px;
+}
+.stat-value {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text);
+}
+.chart-container {
+    position: relative;
+    height: 450px;
+    width: 100%;
+}
+
+html[data-theme="dark"] .stat-card { background: #1e293b; border-color: #334155; }
+html[data-theme="dark"] .stat-value { color: #e2e8f0; }
 .import-detail-wrap {
     overflow: auto;
     max-height: 70vh;

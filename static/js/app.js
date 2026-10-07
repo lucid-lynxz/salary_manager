@@ -358,6 +358,205 @@ function renderTable(tableEl, rows, startRow, headerRows, rowIndices, pagination
     return pageInfo;
 }
 
+// ---------------------------------------------------------------------------
+// 数值列图表：检测数值列 → 表头加图标 → 点击弹框绘制
+// ---------------------------------------------------------------------------
+let _chartInstance = null;
+
+function isNumericCell(val) {
+    if (val == null || val === '') return false;
+    if (typeof val === 'number') return !isNaN(val);
+    const s = String(val).trim().replace(/[¥$,，]/g, '');
+    if (!s) return false;
+    // 日期值不算数值列
+    if (/^\d{4}[-/年.]\d{1,2}[-/月.]\d{1,2}日?$/.test(s)) return false;
+    // 银行账号：纯数字但太长，不算数值列
+    if (/^\d{14,}$/.test(s)) return false;
+    const n = parseFloat(s);
+    return !isNaN(n) && isFinite(n);
+}
+
+function addChartButtonsToTable(tableEl, headerCount) {
+    if (!window.Chart) return;
+    if (!tableEl || !tableEl.tBodies.length) return;
+
+    const tbody = tableEl.tBodies[0];
+    const dataRows = [...tbody.querySelectorAll('tr')];
+    if (!dataRows.length) return;
+
+    // 跳过省略标记行
+    const realRows = dataRows.filter(tr => !tr.classList.contains('omitted-row'));
+    if (!realRows.length) return;
+
+    // 检测每列是否为数值列（跳过第0列=行号）
+    const firstRowCells = realRows[0].querySelectorAll('td');
+    const colCount = firstRowCells.length;
+    const numericFlags = new Array(colCount).fill(false);
+
+    for (let ci = 0; ci < colCount; ci++) {
+        let numericCount = 0, totalChecked = 0;
+        for (let ri = 0; ri < Math.min(realRows.length, 20); ri++) {
+            const cells = realRows[ri].querySelectorAll('td');
+            if (ci < cells.length) {
+                totalChecked++;
+                if (isNumericCell(cells[ci].textContent)) numericCount++;
+            }
+        }
+        if (totalChecked > 0 && numericCount / totalChecked >= 0.6) {
+            numericFlags[ci] = true;
+        }
+    }
+
+    // 找到最后一个表头行的 th（跳过行号列的 th.row-header）
+    const theadRows = tableEl.querySelectorAll('thead tr');
+    const lastHeaderRow = theadRows[theadRows.length - 1];
+    if (!lastHeaderRow) return;
+    const headerCells = lastHeaderRow.querySelectorAll('th');
+
+    // 先移除已有的图表按钮
+    lastHeaderRow.querySelectorAll('.col-chart-btn').forEach(b => b.remove());
+
+    // 给数值列表头加图表按钮
+    for (let ci = 0; ci < colCount; ci++) {
+        if (!numericFlags[ci]) continue;
+        // headerCells[ci + 1] 因为第0列是行号 th.row-header
+        const th = headerCells[ci + 1];
+        if (!th) continue;
+        const colName = th.textContent.trim();
+
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'col-chart-btn';
+        btn.title = '查看统计图表';
+        btn.innerHTML = '📊';
+        btn.dataset.colIdx = ci;
+        btn.dataset.colName = colName;
+
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showColumnChart(tableEl, ci, colName);
+        });
+
+        th.appendChild(btn);
+        th.classList.add('has-chart-btn');
+    }
+}
+
+function showColumnChart(tableEl, colIdx, colName) {
+    // 收集该列所有数值
+    const tbody = tableEl.tBodies[0];
+    const values = [];
+    const labels = [];
+    const rows = tbody.querySelectorAll('tr:not(.omitted-row)');
+    rows.forEach(tr => {
+        const cells = tr.querySelectorAll('td');
+        if (colIdx < cells.length) {
+            const text = cells[colIdx].textContent.trim();
+            const n = parseFloat(text.replace(/[¥$,，]/g, ''));
+            if (!isNaN(n)) {
+                values.push(n);
+                // 用行首的行号或姓名作为 label
+                const rowHeader = tr.querySelector('th.row-header');
+                const firstTd = tr.querySelector('td');
+                const label = rowHeader ? `#${rowHeader.textContent}` : (firstTd ? firstTd.textContent.trim() : '');
+                labels.push(label);
+            }
+        }
+    });
+
+    if (!values.length) return;
+
+    // 计算统计值
+    const sorted = [...values].sort((a, b) => a - b);
+    const min = sorted[0];
+    const max = sorted[sorted.length - 1];
+    const sum = values.reduce((a, b) => a + b, 0);
+    const avg = sum / values.length;
+    const median = sorted.length % 2 === 1
+        ? sorted[(sorted.length - 1) / 2]
+        : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2;
+
+    // 排序后的数据（用于图表）
+    const pairs = values.map((v, i) => ({ v, l: labels[i] }))
+        .sort((a, b) => a.v - b.v);
+    const sortedValues = pairs.map(p => p.v);
+    const sortedLabels = pairs.map((p, i) => `${p.l} (${i + 1})`);
+
+    // 渲染模态框
+    const body = $('#modal-body');
+    if (_chartInstance) { _chartInstance.destroy(); _chartInstance = null; }
+
+    // 图表用更宽的模态框
+    $('#modal').classList.add('import-detail-modal');
+
+    body.innerHTML = `
+        <h2>${escapeHtml(colName)} · 数据统计</h2>
+        <div class="chart-stats">
+            <div class="stat-card"><div class="stat-label">最小值</div><div class="stat-value">${fmtMoney(min)}</div></div>
+            <div class="stat-card"><div class="stat-label">最大值</div><div class="stat-value">${fmtMoney(max)}</div></div>
+            <div class="stat-card"><div class="stat-label">中位数</div><div class="stat-value">${fmtMoney(median)}</div></div>
+            <div class="stat-card"><div class="stat-label">平均值</div><div class="stat-value">${fmtMoney(avg)}</div></div>
+            <div class="stat-card"><div class="stat-label">求和</div><div class="stat-value">${fmtMoney(sum)}</div></div>
+            <div class="stat-card"><div class="stat-label">样本数</div><div class="stat-value">${values.length}</div></div>
+        </div>
+        <div class="chart-container">
+            <canvas id="col-chart"></canvas>
+        </div>
+    `;
+    show($('#modal'));
+
+    // 绘制图表
+    const ctx = document.getElementById('col-chart');
+    if (ctx && window.Chart) {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        const gridColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+        const tickColor = isDark ? '#cbd5e1' : '#334155';
+        _chartInstance = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: sortedLabels,
+                datasets: [{
+                    label: colName,
+                    data: sortedValues,
+                    backgroundColor: sortedValues.map(v =>
+                        v === min ? '#dc2626' :
+                        v === max ? '#16a34a' :
+                        '#3b82f6'
+                    ),
+                    borderRadius: 3,
+                    borderSkipped: false,
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => `${colName}: ${fmtMoney(ctx.parsed.x)}`
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: {
+                            callback: (v) => fmtMoney(v),
+                            color: tickColor,
+                        },
+                        grid: { color: gridColor },
+                    },
+                    y: {
+                        ticks: { font: { size: 11 }, color: tickColor },
+                        grid: { color: gridColor },
+                    }
+                }
+            }
+        });
+    }
+}
+
 function getFreezeCols(mapping) {
     if (!mapping) return [];
     const cols = [mapping.community, mapping.name].filter(v => v != null && v !== '');
@@ -407,6 +606,9 @@ function renderSalaryPreview() {
     const freezeCols = getFreezeCols(mapping);
     const pageInfo = renderTable($('#salary-preview-table'), finalRows, 1, parseHeaderRows($('#salary-header-rows').value), finalRowIndices, pagination, freezeCols);
     renderPreviewPagination('salary', pageInfo);
+    // 数值列加图表按钮
+    const salHeaderCount = parseHeaderRows($('#salary-header-rows').value).length || 1;
+    addChartButtonsToTable($('#salary-preview-table'), salHeaderCount);
 }
 
 function renderEmailPreview() {
@@ -2735,6 +2937,33 @@ function renderSearchResults(results) {
     });
     html += '</tbody></table>';
     el.innerHTML = html;
+
+    // 给数值列（应发工资/代扣合计/实发工资）加图表按钮
+    if (window.Chart) {
+        const table = el.querySelector('table');
+        if (table) {
+            // 搜索结果表：无行号列，数值列索引 3,4,5
+            const numericColIdxs = [3, 4, 5];
+            const headerCells = table.querySelectorAll('thead th');
+            numericColIdxs.forEach(ci => {
+                const th = headerCells[ci];
+                if (!th) return;
+                const colName = th.textContent.trim();
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'col-chart-btn';
+                btn.title = '查看统计图表';
+                btn.innerHTML = '📊';
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    showColumnChart(table, ci, colName);
+                });
+                th.appendChild(btn);
+                th.classList.add('has-chart-btn');
+            });
+        }
+    }
+
     el.querySelectorAll('button[data-id]').forEach(btn => {
         btn.addEventListener('click', () => showPersonDetail(
             parseInt(btn.dataset.id),
@@ -2851,9 +3080,17 @@ async function showPersonDetail(id, year, month) {
     show($('#modal'));
 }
 
-$('.close-btn').addEventListener('click', () => { $('#modal').classList.remove('import-detail-modal'); hide($('#modal')); });
+$('.close-btn').addEventListener('click', () => {
+    if (_chartInstance) { _chartInstance.destroy(); _chartInstance = null; }
+    $('#modal').classList.remove('import-detail-modal');
+    hide($('#modal'));
+});
 $('#modal').addEventListener('click', (e) => {
-    if (e.target === $('#modal')) { $('#modal').classList.remove('import-detail-modal'); hide($('#modal')); }
+    if (e.target === $('#modal')) {
+        if (_chartInstance) { _chartInstance.destroy(); _chartInstance = null; }
+        $('#modal').classList.remove('import-detail-modal');
+        hide($('#modal'));
+    }
 });
 
 // History
