@@ -1,4 +1,4 @@
-// State
+﻿// State
 const state = {
     salary: { fileId: null, filename: null, config: null, parsed: null, preview: null, previewRowIndices: [], mapping: null, validationState: null, overrides: {}, deletedRows: [], fullPreview: false, previewPage: 1, previewPageSize: 20 },
     email: { fileId: null, filename: null, config: null, parsed: null, preview: null, previewRowIndices: [], mapping: null, overrides: {}, overrideLog: {}, deletedRows: [], validationState: null, fullPreview: false, previewPage: 1, previewPageSize: 20 },
@@ -645,7 +645,7 @@ function showColumnChart(tableEl, colIdx, colName) {
                         ticks: {
                             color: tickColor,
                             font: { size: 11 },
-                            callback: (v) => fmtMoney(v),
+                            callback: (v) => Math.round(v).toLocaleString(),
                         },
                         grid: { color: gridColor },
                     }
@@ -850,7 +850,7 @@ function showPersonHistoryChart(timeAscHistory, colName, personLabel) {
                         ticks: {
                             color: tickColor,
                             font: { size: 11 },
-                            callback: (v) => fmtMoney(v),
+                            callback: (v) => Math.round(v).toLocaleString(),
                         },
                         grid: { color: gridColor },
                     }
