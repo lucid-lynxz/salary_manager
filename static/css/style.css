@@ -1256,6 +1256,7 @@ html[data-theme="dark"] .service-controls .btn,
 html[data-theme="dark"] .tab-btn { background: var(--card); border-color: var(--border); color: var(--text); }
 html[data-theme="dark"] .service-controls .btn:hover,
 html[data-theme="dark"] .tab-btn:hover { border-color: var(--primary); color: var(--primary); }
+html[data-theme="dark"] .tab-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 html[data-theme="dark"] .btn.secondary { background: #334155; color: var(--text); }
 html[data-theme="dark"] .btn.secondary:hover { background: #475569; }
 html[data-theme="dark"] .btn.toggle { background: #334155; color: var(--text); }
