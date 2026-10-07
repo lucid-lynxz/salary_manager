@@ -2573,15 +2573,14 @@ async function loadCommunities() {
 let searchSuggestTimer = null;
 
 function buildSearchUrl(base, q, monthVal, communityVal) {
-    let url = `${base}?q=${encodeURIComponent(q)}`;
+    const params = [];
+    if (q) params.push(`q=${encodeURIComponent(q)}`);
     if (monthVal && monthVal !== 'all') {
         const [year, month] = monthVal.split('-');
-        url += `&year=${year}&month=${month}`;
+        params.push(`year=${year}&month=${month}`);
     }
-    if (communityVal) {
-        url += `&community=${encodeURIComponent(communityVal)}`;
-    }
-    return url;
+    if (communityVal) params.push(`community=${encodeURIComponent(communityVal)}`);
+    return params.length ? `${base}?${params.join('&')}` : base;
 }
 
 async function fetchSearchSuggestions() {
