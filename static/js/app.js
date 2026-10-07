@@ -443,10 +443,9 @@ function addChartButtonsToTable(tableEl, headerCount) {
 }
 
 function showColumnChart(tableEl, colIdx, colName) {
-    // 收集该列所有数值
+    // 收集该列所有数值（保持原始顺序）
     const tbody = tableEl.tBodies[0];
-    const values = [];
-    const labels = [];
+    const rawValues = [];
     const rows = tbody.querySelectorAll('tr:not(.omitted-row)');
     rows.forEach(tr => {
         const cells = tr.querySelectorAll('td');
@@ -454,19 +453,31 @@ function showColumnChart(tableEl, colIdx, colName) {
             const text = cells[colIdx].textContent.trim();
             const n = parseFloat(text.replace(/[¥$,，]/g, ''));
             if (!isNaN(n)) {
-                values.push(n);
-                // 用行首的行号或姓名作为 label
+                // 构建详细信息：行号 + 社区 + 姓名 + 数值
                 const rowHeader = tr.querySelector('th.row-header');
-                const firstTd = tr.querySelector('td');
-                const label = rowHeader ? `#${rowHeader.textContent}` : (firstTd ? firstTd.textContent.trim() : '');
-                labels.push(label);
+                const labelParts = [];
+                if (rowHeader) labelParts.push(`#${rowHeader.textContent}`);
+                // 取前两列作为社区+姓名
+                const firstTds = tr.querySelectorAll('td');
+                if (firstTds.length >= 2) {
+                    labelParts.push(firstTds[0].textContent.trim());
+                    labelParts.push(firstTds[1].textContent.trim());
+                }
+                rawValues.push({
+                    value: n,
+                    label: labelParts.length ? labelParts.join(' · ') : String(n),
+                    rowNum: rowHeader ? parseInt(rowHeader.textContent) : null,
+                    community: firstTds.length >= 1 ? firstTds[0].textContent.trim() : '',
+                    name: firstTds.length >= 2 ? firstTds[1].textContent.trim() : '',
+                });
             }
         }
     });
 
-    if (!values.length) return;
+    if (!rawValues.length) return;
 
     // 计算统计值
+    const values = rawValues.map(r => r.value);
     const sorted = [...values].sort((a, b) => a - b);
     const min = sorted[0];
     const max = sorted[sorted.length - 1];
@@ -476,28 +487,29 @@ function showColumnChart(tableEl, colIdx, colName) {
         ? sorted[(sorted.length - 1) / 2]
         : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2;
 
-    // 排序后的数据（用于图表）
-    const pairs = values.map((v, i) => ({ v, l: labels[i] }))
-        .sort((a, b) => a.v - b.v);
-    const sortedValues = pairs.map(p => p.v);
-    const sortedLabels = pairs.map((p, i) => `${p.l} (${i + 1})`);
+    // 标准差
+    const variance = values.reduce((acc, v) => acc + Math.pow(v - avg, 2), 0) / values.length;
+    const stdDev = Math.sqrt(variance);
+
+    // 标记 min/max 的索引（原始顺序）
+    const minIdx = values.indexOf(min);
+    const maxIdx = values.indexOf(max);
 
     // 渲染模态框
     const body = $('#modal-body');
     if (_chartInstance) { _chartInstance.destroy(); _chartInstance = null; }
 
-    // 图表用更宽的模态框
     $('#modal').classList.add('import-detail-modal');
 
     body.innerHTML = `
         <h2>${escapeHtml(colName)} · 数据统计</h2>
         <div class="chart-stats">
-            <div class="stat-card"><div class="stat-label">最小值</div><div class="stat-value">${fmtMoney(min)}</div></div>
-            <div class="stat-card"><div class="stat-label">最大值</div><div class="stat-value">${fmtMoney(max)}</div></div>
+            <div class="stat-card"><div class="stat-label">最小值</div><div class="stat-value" style="color:#dc2626">${fmtMoney(min)}</div></div>
+            <div class="stat-card"><div class="stat-label">最大值</div><div class="stat-value" style="color:#16a34a">${fmtMoney(max)}</div></div>
             <div class="stat-card"><div class="stat-label">中位数</div><div class="stat-value">${fmtMoney(median)}</div></div>
             <div class="stat-card"><div class="stat-label">平均值</div><div class="stat-value">${fmtMoney(avg)}</div></div>
             <div class="stat-card"><div class="stat-label">求和</div><div class="stat-value">${fmtMoney(sum)}</div></div>
-            <div class="stat-card"><div class="stat-label">样本数</div><div class="stat-value">${values.length}</div></div>
+            <div class="stat-card"><div class="stat-label">标准差</div><div class="stat-value">${fmtMoney(stdDev)}</div></div>
         </div>
         <div class="chart-container">
             <canvas id="col-chart"></canvas>
@@ -505,50 +517,132 @@ function showColumnChart(tableEl, colIdx, colName) {
     `;
     show($('#modal'));
 
-    // 绘制图表
-    const ctx = document.getElementById('col-chart');
-    if (ctx && window.Chart) {
+    // 绘制折线图
+    const canvas = document.getElementById('col-chart');
+    if (canvas && window.Chart) {
         const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
-        const gridColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)';
+        const gridColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
         const tickColor = isDark ? '#cbd5e1' : '#334155';
-        _chartInstance = new Chart(ctx, {
-            type: 'bar',
+        const lineColor = '#3b82f6';
+
+        // 点颜色：min 红、max 绿、其余蓝
+        const pointColors = rawValues.map((r, i) =>
+            i === minIdx ? '#dc2626' :
+            i === maxIdx ? '#16a34a' :
+            lineColor
+        );
+        const pointRadii = rawValues.map((_, i) =>
+            (i === minIdx || i === maxIdx) ? 6 : 4
+        );
+
+        _chartInstance = new Chart(canvas, {
+            type: 'line',
             data: {
-                labels: sortedLabels,
+                labels: rawValues.map((r, i) => i + 1),
                 datasets: [{
                     label: colName,
-                    data: sortedValues,
-                    backgroundColor: sortedValues.map(v =>
-                        v === min ? '#dc2626' :
-                        v === max ? '#16a34a' :
-                        '#3b82f6'
-                    ),
-                    borderRadius: 3,
-                    borderSkipped: false,
+                    data: rawValues.map(r => r.value),
+                    borderColor: lineColor,
+                    borderWidth: 2,
+                    backgroundColor: 'rgba(59, 130, 246, 0.08)',
+                    fill: true,
+                    tension: 0.25,
+                    pointBackgroundColor: pointColors,
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 1.5,
+                    pointRadius: pointRadii,
+                    pointHoverRadius: 7,
+                    pointHoverBorderWidth: 2,
+                }, {
+                    label: '平均值',
+                    data: rawValues.map(() => avg),
+                    borderColor: '#f59e0b',
+                    borderWidth: 1.5,
+                    borderDash: [6, 4],
+                    pointRadius: 0,
+                    fill: false,
+                    tension: 0,
+                }, {
+                    label: '中位数',
+                    data: rawValues.map(() => median),
+                    borderColor: '#8b5cf6',
+                    borderWidth: 1.5,
+                    borderDash: [4, 4],
+                    pointRadius: 0,
+                    fill: false,
+                    tension: 0,
                 }]
             },
             options: {
-                indexAxis: 'y',
                 responsive: true,
                 maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
                 plugins: {
-                    legend: { display: false },
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        align: 'end',
+                        labels: {
+                            color: tickColor,
+                            usePointStyle: true,
+                            pointStyle: 'circle',
+                            padding: 16,
+                            font: { size: 12 },
+                        }
+                    },
                     tooltip: {
+                        enabled: true,
+                        backgroundColor: isDark ? 'rgba(30, 41, 59, 0.95)' : 'rgba(30, 41, 59, 0.92)',
+                        titleColor: '#fff',
+                        bodyColor: '#e2e8f0',
+                        borderColor: isDark ? '#334155' : '#1e293b',
+                        borderWidth: 1,
+                        cornerRadius: 8,
+                        padding: 14,
+                        displayColors: true,
                         callbacks: {
-                            label: (ctx) => `${colName}: ${fmtMoney(ctx.parsed.x)}`
+                            title: (items) => {
+                                if (!items.length) return '';
+                                const idx = items[0].dataIndex;
+                                const d = rawValues[idx];
+                                const rank = sorted.length - sorted.indexOf(d.value);
+                                return [
+                                    d.community && d.name ? `${d.community} · ${d.name}` : d.label,
+                                    d.rowNum ? `行号 #${d.rowNum}` : `序号 ${idx + 1}`,
+                                ];
+                            },
+                            label: (ctx) => {
+                                const idx = ctx.dataIndex;
+                                const d = rawValues[idx];
+                                const rank = sorted.length - sorted.indexOf(d.value);
+                                const diff = d.value - avg;
+                                const diffStr = diff >= 0 ? `+${fmtMoney(diff)}` : fmtMoney(diff);
+                                const pct = avg !== 0 ? (d.value / avg * 100).toFixed(1) + '%' : '-';
+                                const parts = [
+                                    `${ctx.dataset.label}: ${fmtMoney(d.value)}`,
+                                    `排名: 第 ${rank} / ${values.length}`,
+                                    `偏离均值: ${diffStr} (${pct})`,
+                                ];
+                                if (idx === minIdx) parts.push('⚠ 最小值');
+                                if (idx === maxIdx) parts.push('★ 最大值');
+                                return parts;
+                            }
                         }
                     }
                 },
                 scales: {
                     x: {
-                        ticks: {
-                            callback: (v) => fmtMoney(v),
-                            color: tickColor,
-                        },
+                        title: { display: true, text: '序号', color: tickColor, font: { size: 12 } },
+                        ticks: { color: tickColor, font: { size: 11 } },
                         grid: { color: gridColor },
                     },
                     y: {
-                        ticks: { font: { size: 11 }, color: tickColor },
+                        title: { display: true, text: colName, color: tickColor, font: { size: 12 } },
+                        ticks: {
+                            color: tickColor,
+                            font: { size: 11 },
+                            callback: (v) => fmtMoney(v),
+                        },
                         grid: { color: gridColor },
                     }
                 }
