@@ -1337,11 +1337,16 @@ def api_search():
     month = request.args.get("month", type=int)
     community = request.args.get("community", "").strip()
 
+    # year=0 或 month=0 表示"全部数据"（前端 "全部数据" 选项）
+    all_months = (year == 0 or month == 0)
+    if all_months:
+        year = month = None
+
     with get_db() as conn:
-        # 空姓名搜索默认取最新月份；有姓名但未指定月份时返回所有月份
-        if not q and not (year and month):
+        # 空姓名 + 未指定月份（非"全部数据"）→ 取最新月份
+        if not q and not all_months and not (year and month):
             year, month = get_latest_month(conn)
-        if not q and not (year and month):
+        if not q and not all_months and not (year and month):
             return jsonify([])
 
         if q:
@@ -1376,26 +1381,37 @@ def api_search():
                 sql += " ORDER BY s.year DESC, s.month DESC, p.community, p.name"
                 rows = conn.execute(sql, params).fetchall()
         else:
-            sql = """
-                SELECT p.id, p.community, p.name, p.email, p.email_status, p.email_issues,
-                       s.year, s.month, sr.gross_salary, sr.total_deduction, sr.net_salary, sr.bank_account, sr.data_json
-                FROM persons p
-                JOIN salary_imports s ON p.import_id = s.id
-                JOIN salary_records sr ON sr.person_id = p.id AND sr.import_id = s.id
-                WHERE s.year = ? AND s.month = ?
-            """
-            params = [year, month]
+            if year and month:
+                sql = """
+                    SELECT p.id, p.community, p.name, p.email, p.email_status, p.email_issues,
+                           s.year, s.month, sr.gross_salary, sr.total_deduction, sr.net_salary, sr.bank_account, sr.data_json
+                    FROM persons p
+                    JOIN salary_imports s ON p.import_id = s.id
+                    JOIN salary_records sr ON sr.person_id = p.id AND sr.import_id = s.id
+                    WHERE s.year = ? AND s.month = ?
+                """
+                params = [year, month]
+            else:
+                # 全部数据：不加年月过滤
+                sql = """
+                    SELECT p.id, p.community, p.name, p.email, p.email_status, p.email_issues,
+                           s.year, s.month, sr.gross_salary, sr.total_deduction, sr.net_salary, sr.bank_account, sr.data_json
+                    FROM persons p
+                    JOIN salary_imports s ON p.import_id = s.id
+                    JOIN salary_records sr ON sr.person_id = p.id AND sr.import_id = s.id
+                """
+                params = []
             if community:
                 sql += " AND p.community = ?"
                 params.append(community)
-            sql += " ORDER BY p.community, p.name"
+            sql += " ORDER BY s.year DESC, s.month DESC, p.community, p.name"
             rows = conn.execute(sql, params).fetchall()
 
     results = []
     seen = set()
     for r in rows:
         # 按月份筛选时同一人只取一条；跨月份搜索时每条月份记录都保留
-        key = (r["community"], r["name"], r["year"], r["month"]) if q and not (year and month) else (r["community"], r["name"])
+        key = (r["community"], r["name"], r["year"], r["month"]) if (q and not (year and month)) or all_months else (r["community"], r["name"])
         if key in seen:
             continue
         seen.add(key)

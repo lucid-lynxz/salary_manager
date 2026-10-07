@@ -3074,7 +3074,9 @@ let searchSuggestTimer = null;
 function buildSearchUrl(base, q, monthVal, communityVal) {
     const params = [];
     if (q) params.push(`q=${encodeURIComponent(q)}`);
-    if (monthVal && monthVal !== 'all') {
+    if (monthVal === 'all') {
+        params.push('year=0&month=0');
+    } else if (monthVal) {
         const [year, month] = monthVal.split('-');
         params.push(`year=${year}&month=${month}`);
     }
