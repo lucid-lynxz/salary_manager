@@ -3307,6 +3307,7 @@ async function showPersonDetail(id, year, month) {
     if (r.email_issues) html += `<p style="color:var(--danger)">邮箱问题：${escapeHtml(r.email_issues)}</p>`;
 
     const history = r.history || [];
+    let filteredCols = [];
     if (!history.length) {
         html += '<p>暂无历史记录。</p>';
     } else {
@@ -3321,7 +3322,7 @@ async function showPersonDetail(id, year, month) {
         
         // 过滤掉弹框标题已显示的冗余字段
         const skipFields = new Set(['序号', '姓名', '社区']);
-        const filteredCols = detailCols.filter(col => !skipFields.has(col));
+        filteredCols = detailCols.filter(col => !skipFields.has(col));
         
         html += `<table class="search-results-table"><thead><tr>`;
         filteredCols.forEach((col) => {
