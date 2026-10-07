@@ -801,13 +801,15 @@ def build_preview_rows(df, detected_header, head_data=5, tail_data=5, threshold=
     header_count = (detected_header + 1) if detected_header is not None else 1
     data_count = max(0, len(df) - header_count)
 
-    def row_values(i):
+    def row_values(i, is_header=False):
+        if is_header:
+            return [normalize_header(v) for v in df.iloc[i].tolist()]
         return [normalize_text(v) for v in df.iloc[i].tolist()]
 
     preview = []
     row_indices = []
     for i in range(header_count):
-        preview.append(row_values(i))
+        preview.append(row_values(i, is_header=True))
         row_indices.append(i + 1)
 
     if full_preview or data_count <= threshold:
