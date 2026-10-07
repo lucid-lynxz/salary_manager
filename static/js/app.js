@@ -865,6 +865,29 @@ function closeChartModal() {
     hide($('#chart-modal'));
 }
 
+// 模态框 ESC 关闭：按 z-index 从高到低关闭最顶层的可见模态框
+document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const allModals = document.querySelectorAll('.modal:not(.hidden)');
+    if (!allModals.length) return;
+    // 按 z-index 降序，关最高层
+    const sorted = [...allModals].sort((a, b) => {
+        const za = parseInt(getComputedStyle(a).zIndex) || 0;
+        const zb = parseInt(getComputedStyle(b).zIndex) || 0;
+        return zb - za;
+    });
+    const top = sorted[0];
+    const id = top.id;
+    if (id === 'chart-modal') closeChartModal();
+    else if (id === 'sender-modal') closeSenderModal();
+    else if (id === 'test-email-modal') closeTestEmailModal();
+    else if (id === 'modal') {
+        if (_chartInstance) { _chartInstance.destroy(); _chartInstance = null; }
+        top.classList.remove('import-detail-modal');
+        hide(top);
+    }
+});
+
 // chart-modal 遮罩点击关闭
 document.addEventListener('DOMContentLoaded', () => {
     const cm = $('#chart-modal');
