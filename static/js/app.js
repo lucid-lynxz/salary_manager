@@ -651,6 +651,212 @@ function showColumnChart(tableEl, colIdx, colName) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// 个人历史趋势图：X轴=年月，折线+均值/中位数辅助线
+// ---------------------------------------------------------------------------
+function showPersonHistoryChart(timeAscHistory, colName, personLabel) {
+    // 从 history 中提取该列的数值（时间正序）
+    const rawPoints = timeAscHistory.map((h, i) => {
+        const v = (h.detail || {})[colName];
+        const n = v != null && v !== '' ? parseFloat(String(v).replace(/[¥$,，]/g, '')) : NaN;
+        return {
+            xLabel: `${h.year}-${String(h.month).padStart(2, '0')}`,
+            displayLabel: `${h.year}年${h.month}月`,
+            value: n,
+            year: h.year,
+            month: h.month,
+        };
+    }).filter(p => !isNaN(p.value));
+
+    if (rawPoints.length < 2) return;
+
+    const values = rawPoints.map(p => p.value);
+    const sorted = [...values].sort((a, b) => a - b);
+    const min = sorted[0];
+    const max = sorted[sorted.length - 1];
+    const sum = values.reduce((a, b) => a + b, 0);
+    const avg = sum / values.length;
+    const median = sorted.length % 2 === 1
+        ? sorted[(sorted.length - 1) / 2]
+        : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2;
+    const variance = values.reduce((acc, v) => acc + Math.pow(v - avg, 2), 0) / values.length;
+    const stdDev = Math.sqrt(variance);
+
+    const minIdx = values.indexOf(min);
+    const maxIdx = values.indexOf(max);
+
+    // 环比变化率（%）
+    const changes = [];
+    for (let i = 1; i < values.length; i++) {
+        const diff = values[i] - values[i - 1];
+        const pct = values[i - 1] !== 0 ? (diff / values[i - 1] * 100) : null;
+        changes.push({ diff, pct });
+    }
+
+    // 渲染模态框
+    const body = $('#modal-body');
+    if (_chartInstance) { _chartInstance.destroy(); _chartInstance = null; }
+    $('#modal').classList.add('import-detail-modal');
+
+    body.innerHTML = `
+        <h2>${escapeHtml(personLabel)} · ${escapeHtml(colName)} 历史趋势</h2>
+        <div class="chart-stats">
+            <div class="stat-card"><div class="stat-label">最小值</div><div class="stat-value" style="color:#dc2626">${fmtMoney(min)}</div></div>
+            <div class="stat-card"><div class="stat-label">最大值</div><div class="stat-value" style="color:#16a34a">${fmtMoney(max)}</div></div>
+            <div class="stat-card"><div class="stat-label">中位数</div><div class="stat-value">${fmtMoney(median)}</div></div>
+            <div class="stat-card"><div class="stat-label">平均值</div><div class="stat-value">${fmtMoney(avg)}</div></div>
+            <div class="stat-card"><div class="stat-label">求和</div><div class="stat-value">${fmtMoney(sum)}</div></div>
+            <div class="stat-card"><div class="stat-label">标准差</div><div class="stat-value">${fmtMoney(stdDev)}</div></div>
+        </div>
+        <div class="chart-container">
+            <canvas id="col-chart"></canvas>
+        </div>
+    `;
+    show($('#modal'));
+
+    const canvas = document.getElementById('col-chart');
+    if (canvas && window.Chart) {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        const gridColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+        const tickColor = isDark ? '#cbd5e1' : '#334155';
+        const lineColor = '#3b82f6';
+
+        const pointColors = rawPoints.map((_, i) =>
+            i === minIdx ? '#dc2626' :
+            i === maxIdx ? '#16a34a' :
+            lineColor
+        );
+        const pointRadii = rawPoints.map((_, i) =>
+            (i === minIdx || i === maxIdx) ? 6 : 4
+        );
+
+        _chartInstance = new Chart(canvas, {
+            type: 'line',
+            data: {
+                labels: rawPoints.map(p => p.xLabel),
+                datasets: [{
+                    label: colName,
+                    data: rawPoints.map(p => p.value),
+                    borderColor: lineColor,
+                    borderWidth: 2.5,
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    fill: true,
+                    tension: 0.2,
+                    pointBackgroundColor: pointColors,
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 1.5,
+                    pointRadius: pointRadii,
+                    pointHoverRadius: 8,
+                    pointHoverBorderWidth: 2,
+                }, {
+                    label: '平均值',
+                    data: rawPoints.map(() => avg),
+                    borderColor: '#f59e0b',
+                    borderWidth: 1.5,
+                    borderDash: [6, 4],
+                    pointRadius: 0,
+                    fill: false,
+                    tension: 0,
+                }, {
+                    label: '中位数',
+                    data: rawPoints.map(() => median),
+                    borderColor: '#8b5cf6',
+                    borderWidth: 1.5,
+                    borderDash: [4, 4],
+                    pointRadius: 0,
+                    fill: false,
+                    tension: 0,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        align: 'end',
+                        labels: {
+                            color: tickColor,
+                            usePointStyle: true,
+                            pointStyle: 'circle',
+                            padding: 16,
+                            font: { size: 12 },
+                        }
+                    },
+                    tooltip: {
+                        enabled: true,
+                        backgroundColor: isDark ? 'rgba(30, 41, 59, 0.95)' : 'rgba(30, 41, 59, 0.92)',
+                        titleColor: '#fff',
+                        bodyColor: '#e2e8f0',
+                        borderColor: isDark ? '#334155' : '#1e293b',
+                        borderWidth: 1,
+                        cornerRadius: 8,
+                        padding: 14,
+                        displayColors: true,
+                        callbacks: {
+                            title: (items) => {
+                                if (!items.length) return '';
+                                const idx = items[0].dataIndex;
+                                return [
+                                    personLabel,
+                                    rawPoints[idx].displayLabel,
+                                ];
+                            },
+                            label: (ctx) => {
+                                const idx = ctx.dataIndex;
+                                const p = rawPoints[idx];
+                                const parts = [
+                                    `${ctx.dataset.label}: ${fmtMoney(p.value)}`,
+                                ];
+                                if (ctx.datasetIndex === 0) {
+                                    const rank = sorted.length - sorted.indexOf(p.value);
+                                    parts.push(`排名: 第 ${rank} / ${values.length}`);
+                                    // 环比变化
+                                    if (idx > 0) {
+                                        const prev = rawPoints[idx - 1].value;
+                                        const diff = p.value - prev;
+                                        const pct = prev !== 0 ? (diff / prev * 100).toFixed(1) + '%' : '-';
+                                        const arrow = diff > 0 ? '↑' : (diff < 0 ? '↓' : '→');
+                                        const sign = diff >= 0 ? '+' : '';
+                                        parts.push(`环比上月: ${arrow} ${sign}${fmtMoney(diff)} (${pct})`);
+                                    } else {
+                                        parts.push('环比上月: — (首条)');
+                                    }
+                                    // 偏离均值
+                                    const diffAvg = p.value - avg;
+                                    const sign = diffAvg >= 0 ? '+' : '';
+                                    parts.push(`偏离均值: ${sign}${fmtMoney(diffAvg)}`);
+                                    if (idx === minIdx) parts.push('⚠ 历史最低');
+                                    if (idx === maxIdx) parts.push('★ 历史最高');
+                                }
+                                return parts;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        title: { display: true, text: '年月', color: tickColor, font: { size: 12 } },
+                        ticks: { color: tickColor, font: { size: 11 } },
+                        grid: { color: gridColor },
+                    },
+                    y: {
+                        title: { display: true, text: colName, color: tickColor, font: { size: 12 } },
+                        ticks: {
+                            color: tickColor,
+                            font: { size: 11 },
+                            callback: (v) => fmtMoney(v),
+                        },
+                        grid: { color: gridColor },
+                    }
+                }
+            }
+        });
+    }
+}
+
 function getFreezeCols(mapping) {
     if (!mapping) return [];
     const cols = [mapping.community, mapping.name].filter(v => v != null && v !== '');
@@ -700,9 +906,6 @@ function renderSalaryPreview() {
     const freezeCols = getFreezeCols(mapping);
     const pageInfo = renderTable($('#salary-preview-table'), finalRows, 1, parseHeaderRows($('#salary-header-rows').value), finalRowIndices, pagination, freezeCols);
     renderPreviewPagination('salary', pageInfo);
-    // 数值列加图表按钮
-    const salHeaderCount = parseHeaderRows($('#salary-header-rows').value).length || 1;
-    addChartButtonsToTable($('#salary-preview-table'), salHeaderCount);
 }
 
 function renderEmailPreview() {
@@ -3032,32 +3235,6 @@ function renderSearchResults(results) {
     html += '</tbody></table>';
     el.innerHTML = html;
 
-    // 给数值列（应发工资/代扣合计/实发工资）加图表按钮
-    if (window.Chart) {
-        const table = el.querySelector('table');
-        if (table) {
-            // 搜索结果表：无行号列，数值列索引 3,4,5
-            const numericColIdxs = [3, 4, 5];
-            const headerCells = table.querySelectorAll('thead th');
-            numericColIdxs.forEach(ci => {
-                const th = headerCells[ci];
-                if (!th) return;
-                const colName = th.textContent.trim();
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'col-chart-btn';
-                btn.title = '查看统计图表';
-                btn.innerHTML = '📊';
-                btn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    showColumnChart(table, ci, colName);
-                });
-                th.appendChild(btn);
-                th.classList.add('has-chart-btn');
-            });
-        }
-    }
-
     el.querySelectorAll('button[data-id]').forEach(btn => {
         btn.addEventListener('click', () => showPersonDetail(
             parseInt(btn.dataset.id),
@@ -3169,6 +3346,45 @@ async function showPersonDetail(id, year, month) {
         wrapper.className = 'detail-table-scroll';
         table.parentNode.insertBefore(wrapper, table);
         wrapper.appendChild(table);
+
+        // 历史记录 >=3 条时，给数值列加图表按钮（折线图看时间趋势才有意义）
+        if (window.Chart && history.length >= 3) {
+            // history 后端返回是倒序（最新在前），图表需要正序
+            const timeAscHistory = [...history].sort((a, b) =>
+                (a.year * 12 + a.month) - (b.year * 12 + b.month)
+            );
+            // 数值列候选（优先匹配这些工资字段）
+            const salaryFields = ['应发', '应发合计', '代扣', '代扣合计', '实发', '实发合计', '工资', 'gross', 'deduction', 'net', '工资'];
+            const headerCells = table.querySelectorAll('thead th');
+            filteredCols.forEach((col, ci) => {
+                // 检测是否为数值列：1) 名字匹配工资字段 2) 采样数据大多能 parseFloat
+                const matchSalary = salaryFields.some(f => col.includes(f));
+                let numericCount = 0, totalChecked = 0;
+                for (let ri = 0; ri < Math.min(history.length, 20); ri++) {
+                    const v = (history[ri].detail || {})[col];
+                    if (v != null && v !== '') {
+                        totalChecked++;
+                        if (isNumericCell(v)) numericCount++;
+                    }
+                }
+                const isNumeric = matchSalary || (totalChecked > 0 && numericCount / totalChecked >= 0.6);
+                if (!isNumeric) return;
+
+                const th = headerCells[ci];
+                if (!th) return;
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'col-chart-btn';
+                btn.title = '查看历史趋势图';
+                btn.innerHTML = '📈';
+                btn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    showPersonHistoryChart(timeAscHistory, col, `${r.community} · ${r.name}`);
+                });
+                th.appendChild(btn);
+                th.classList.add('has-chart-btn');
+            });
+        }
     }
     
     show($('#modal'));
