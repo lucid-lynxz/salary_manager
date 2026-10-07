@@ -122,6 +122,45 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
     overflow: hidden;
     text-overflow: ellipsis;
 }
+.help-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--border);
+    color: var(--text-muted);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: help;
+    margin-left: 4px;
+    transition: background 0.15s, color 0.15s;
+}
+.help-icon:hover {
+    background: var(--primary);
+    color: #fff;
+}
+.help-icon-big {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--border);
+    color: var(--text-muted);
+    font-size: 13px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: help;
+    transition: background 0.15s, color 0.15s;
+}
+.help-icon-big:hover {
+    background: var(--primary);
+    color: #fff;
+}
 .form-group input,
 .form-group select {
     flex: 1;
