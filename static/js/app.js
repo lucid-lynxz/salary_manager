@@ -2597,6 +2597,7 @@ async function fetchSearchSuggestions() {
 function selectSuggestion(item) {
     clearTimeout(searchSuggestTimer);
     $('#search-input').value = item.name;
+    $('#search-clear').classList.remove('hidden');
     // 同步更新社区下拉框为该人员所属社区
     const communitySel = $('#search-community');
     if (communitySel && item.community) {
@@ -2656,15 +2657,30 @@ $('#search-input').addEventListener('input', () => {
     } else if (!q && monthSelect.value === 'all') {
         monthSelect.value = '';
     }
+    // 清空图标显示
+    const clearBtn = $('#search-clear');
+    if (q) clearBtn.classList.remove('hidden');
+    else clearBtn.classList.add('hidden');
     searchSuggestTimer = setTimeout(fetchSearchSuggestions, 200);
 });
 
 $('#search-input').addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') hide($('#search-suggestions'));
+    if (e.key === 'Escape') {
+        hide($('#search-suggestions'));
+        $('#search-clear').classList.add('hidden');
+    }
 });
 
 $('#search-input').addEventListener('blur', () => {
     setTimeout(() => hide($('#search-suggestions')), 200);
+});
+
+$('#search-clear').addEventListener('click', () => {
+    $('#search-input').value = '';
+    $('#search-clear').classList.add('hidden');
+    hide($('#search-suggestions'));
+    $('#search-input').focus();
+    $('#search-btn').click();
 });
 
 $('#search-month').addEventListener('change', () => {
