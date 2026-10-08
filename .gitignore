@@ -4,6 +4,7 @@ __pycache__/
 *.pyc
 *.pyo
 uploads/
+exports/
 packages/
 salary.db
 app.log
