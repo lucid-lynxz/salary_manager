@@ -1151,6 +1151,42 @@ function unlockStep(n) {
     updateStepClickable();
 }
 
+// 导入成功后重置向导：清空状态与 UI，回到第一步待导入状态
+function resetWizard() {
+    state.salary = { fileId: null, filename: null, config: null, parsed: null, preview: null, previewRowIndices: [], mapping: null, validationState: null, overrides: {}, deletedRows: [], fullPreview: false, previewPage: 1, previewPageSize: 20 };
+    state.email = { fileId: null, filename: null, config: null, parsed: null, preview: null, previewRowIndices: [], mapping: null, overrides: {}, overrideLog: {}, deletedRows: [], validationState: null, fullPreview: false, previewPage: 1, previewPageSize: 20, skipped: false };
+    state.unlockedSteps = { 1: true };
+    state.detectedYear = null;
+    state.detectedMonth = null;
+    state.importPreview = { headers: null, rows: null, fullPreview: false, page: 1, pageSize: 20, total: 0, matched: 0, unmatched: 0, onlyUnmatched: false };
+
+    $('#salary-file').value = '';
+    $('#email-file').value = '';
+    hide($('#salary-config'));
+    hide($('#salary-preview-area'));
+    hide($('#email-config'));
+    hide($('#email-preview-area'));
+    hide($('#email-skipped-banner'));
+    show($('#email-file').closest('.file-upload-row'));
+    $('#salary-validation').innerHTML = '';
+    $('#email-validation').innerHTML = '';
+    $('#salary-parse-result').textContent = '';
+    $('#import-summary').innerHTML = '';
+    $('#import-preview-table').innerHTML = '';
+    $('#import-preview-stats').textContent = '';
+    hide($('#import-result'));
+    $('#import-result').innerHTML = '';
+    $('#salary-year-month').value = '';
+    for (const id of ['#salary-status-icon', '#email-status-icon']) {
+        const icon = $(id);
+        if (icon) { icon.classList.remove('ok', 'error'); icon.title = '等待解析'; }
+    }
+    $$('.btn.toggle.active').forEach(b => b.classList.remove('active'));
+    $('#to-step2').disabled = true;
+    $('#to-step3').disabled = true;
+    goStep(1);
+}
+
 function updateStepClickable() {
     $$('.step').forEach(s => {
         const step = parseInt(s.dataset.step);
@@ -3288,7 +3324,9 @@ $('#do-import').addEventListener('click', async () => {
     }
     box.innerHTML = html;
     loadMonths();
-    // 导入成功后跳转到「导入历史」标签页并刷新列表
+    // 导入成功后重置向导回第一步待导入状态
+    resetWizard();
+    // 跳转到「导入历史」标签页并刷新列表
     $$('.tab-btn').forEach(b => b.classList.remove('active'));
     $$('.tab-panel').forEach(p => p.classList.remove('active'));
     const historyBtn = document.querySelector('.tab-btn[data-tab="history"]');
