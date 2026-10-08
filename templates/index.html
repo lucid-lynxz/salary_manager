@@ -159,6 +159,10 @@
                     <!-- Step 2: Email -->
                     <div class="step-content" data-step="2">
                         <h2>第二步：选择人员邮箱表 Excel</h2>
+                        <div id="email-skipped-banner" class="skipped-banner hidden">
+                            <span>📮 已跳过邮箱表，邮箱将全部留空，可在"确认导入"页一键查找历史邮箱</span>
+                            <button id="email-upload-btn" class="btn small text">重新上传</button>
+                        </div>
                         <div class="file-upload-row">
                             <input type="file" id="email-file" accept=".xlsx,.xls">
                         </div>
@@ -217,6 +221,7 @@
                         </div>
                         <div class="step-actions">
                             <button id="back-to-step1" class="btn text">上一步</button>
+                            <button id="skip-email-btn" class="btn text" title="跳过邮箱表，邮箱全部留空，可在确认导入页一键查找历史邮箱自动填充">跳过邮箱表 →</button>
                             <button id="to-step3" class="btn primary" disabled>下一步：确认导入</button>
                         </div>
                     </div>

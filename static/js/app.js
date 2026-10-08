@@ -1,7 +1,7 @@
 ﻿// State
 const state = {
     salary: { fileId: null, filename: null, config: null, parsed: null, preview: null, previewRowIndices: [], mapping: null, validationState: null, overrides: {}, deletedRows: [], fullPreview: false, previewPage: 1, previewPageSize: 20 },
-    email: { fileId: null, filename: null, config: null, parsed: null, preview: null, previewRowIndices: [], mapping: null, overrides: {}, overrideLog: {}, deletedRows: [], validationState: null, fullPreview: false, previewPage: 1, previewPageSize: 20 },
+    email: { fileId: null, filename: null, config: null, parsed: null, preview: null, previewRowIndices: [], mapping: null, overrides: {}, overrideLog: {}, deletedRows: [], validationState: null, fullPreview: false, previewPage: 1, previewPageSize: 20, skipped: false },
     currentStep: 1,
     unlockedSteps: { 1: true },
     detectedYear: null,
@@ -1957,7 +1957,7 @@ function renderSalaryValidation() {
         html += `</div>`;
     }
 
-    if (vs.duplicateAccountGroups.length === 0 && vs.accountChangedGroups.length === 0 && vs.mathMismatchIssues.length === 0 && vs.accountEmptyIssues.length === 0 && (vs.duplicateNameGroups || []).length === 0) {
+    if (vs.duplicateAccountGroups.length === 0 && vs.accountChangedGroups.length === 0 && vs.mathMismatchIssues.length === 0 && vs.accountEmptyIssues.length === 0 && (vs.duplicateNameGroups || []).length === 0 && (vs.adjustSalaryIssues || []).length === 0) {
         html += `<p>所有数据均校验通过 ✅</p>`;
         
         // 检查是否有修改或删除操作，如果有则显示写回按钮
@@ -2183,6 +2183,11 @@ function renderSalaryValidation() {
 $('#email-file').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    // 用户重新上传文件 → 清除跳过状态
+    state.email.skipped = false;
+    hide($('#email-skipped-banner'));
+    show($('#email-config'));
+    show($('#email-preview-area'));
     state.email.fullPreview = false;
     state.email.previewPage = 1;
     const fullBtn = $('#email-full-preview-btn');
@@ -2241,6 +2246,38 @@ $('#email-sheet').addEventListener('change', async () => {
 });
 
 $('#email-preview-btn').addEventListener('click', parseEmail);
+
+// 跳过邮箱表：邮箱全部留空，到 step3 时一键从历史导入里查找
+$('#skip-email-btn').addEventListener('click', async () => {
+    const ok = await confirmModal(
+        '确认跳过邮箱表？跳过后所有员工邮箱将为空，可在"确认导入"页点击"一键查找历史邮箱"自动填充。'
+    );
+    if (!ok) return;
+    state.email.skipped = true;
+    state.email.fileId = null;
+    state.email.filename = null;
+    state.email.config = null;
+    state.email.parsed = null;
+    state.email.preview = null;
+    state.email.validationState = null;
+    hide($('#email-file').closest('.file-upload-row'));
+    hide($('#email-config'));
+    hide($('#email-preview-area'));
+    const banner = $('#email-skipped-banner');
+    show(banner);
+    banner.querySelector('span').textContent = '📮 已跳过邮箱表，可在"确认导入"页一键查找历史邮箱';
+    unlockStep(3);
+    $('#to-step3').disabled = false;
+});
+
+// 重新上传：取消跳过状态，让用户选择新文件
+$('#email-upload-btn').addEventListener('click', () => {
+    state.email.skipped = false;
+    hide($('#email-skipped-banner'));
+    show($('#email-file').closest('.file-upload-row'));
+    $('#email-file').value = '';
+    $('#to-step3').disabled = true;
+});
 
 $('#email-full-preview-btn').addEventListener('click', async () => {
     const btn = $('#email-full-preview-btn');
@@ -2846,7 +2883,6 @@ function renderValidation() {
 // Step 3
 function buildSummary() {
     const s = state.salary.parsed;
-    const e = state.email.parsed;
     // 优先使用从文件名解析的年月，其次使用上传时表格解析的年月
     const salaryDetected = state.salary.sheetData || {};
     const year = state.detectedYear ?? salaryDetected.detected_year ?? null;
@@ -2863,16 +2899,24 @@ function buildSummary() {
     const salaryFileLink = state.salary.fileId
         ? `<a href="/api/download/${state.salary.fileId}?filename=${encodeURIComponent(state.salary.filename)}" target="_blank" class="file-link">${escapeHtml(state.salary.filename)}</a>`
         : escapeHtml(state.salary.filename);
-    const emailFileLink = state.email.fileId
-        ? `<a href="/api/download/${state.email.fileId}?filename=${encodeURIComponent(state.email.filename)}" target="_blank" class="file-link">${escapeHtml(state.email.filename)}</a>`
-        : escapeHtml(state.email.filename);
     const salaryDeleted = (state.salary.deletedRows || []).length;
     const salaryActual = Math.max(0, s.record_count - salaryDeleted);
-    const emailDeleted = (state.email.deletedRows || []).length;
-    const emailActual = Math.max(0, e.record_count - emailDeleted);
+
+    let emailLine;
+    if (state.email.skipped) {
+        emailLine = `<p>邮箱表：<strong>[跳过]</strong> 邮箱全部留空，可在下方合并预览中「一键查找历史邮箱」自动填充</p>`;
+    } else {
+        const e = state.email.parsed;
+        const emailFileLink = state.email.fileId
+            ? `<a href="/api/download/${state.email.fileId}?filename=${encodeURIComponent(state.email.filename)}" target="_blank" class="file-link">${escapeHtml(state.email.filename)}</a>`
+            : escapeHtml(state.email.filename);
+        const emailDeleted = (state.email.deletedRows || []).length;
+        const emailActual = e ? Math.max(0, (e.record_count || 0) - emailDeleted) : 0;
+        emailLine = `<p>邮箱表：<strong>${emailFileLink}</strong>${e ? `，源文件 <strong>${e.record_count}</strong> 条${emailDeleted > 0 ? `，删除 <strong class="text-danger">${emailDeleted}</strong> 条，实际导入 <strong>${emailActual}</strong> 条` : ''}` : ''}</p>`;
+    }
     $('#import-summary').innerHTML = `
         <p>工资表：<strong>${salaryFileLink}</strong>，源文件 <strong>${s.record_count}</strong> 条${salaryDeleted > 0 ? `，删除 <strong class="text-danger">${salaryDeleted}</strong> 条，实际导入 <strong>${salaryActual}</strong> 条` : ''}</p>
-        <p>邮箱表：<strong>${emailFileLink}</strong>，源文件 <strong>${e.record_count}</strong> 条${emailDeleted > 0 ? `，删除 <strong class="text-danger">${emailDeleted}</strong> 条，实际导入 <strong>${emailActual}</strong> 条` : ''}</p>
+        ${emailLine}
         <p>合并键：<strong>社区 + 姓名</strong>（以工资表为准进行合并）</p>
         <div id="summary-empty-email"></div>
     `;
@@ -2895,6 +2939,20 @@ function buildImportConfig() {
         community: parseInt($('#email-community-col').value),
         email: parseInt($('#email-col').value),
     };
+    let emailCfg = {
+        skipped: state.email.skipped,
+        file_id: state.email.fileId,
+        filename: state.email.filename,
+        sheet_name: $('#email-sheet').value,
+        header_rows: parseHeaderRows($('#email-header-rows').value),
+        data_start_row: parseInt($('#email-data-start').value),
+        data_end_row: $('#email-data-end').value ? parseInt($('#email-data-end').value) : null,
+        data_end_col: $('#email-data-end-col').value.trim() || null,
+        skip_rows: parseHeaderRows($('#email-skip-rows').value),
+        mapping: emailMapping,
+        overrides: state.email.overrides,
+        deleted_rows: state.email.deletedRows,
+    };
     return {
         salary: {
             file_id: state.salary.fileId,
@@ -2911,25 +2969,14 @@ function buildImportConfig() {
             deleted_rows: state.salary.deletedRows,
             email_overrides: state.importPreview.emailOverrides || {},
         },
-        email: {
-            file_id: state.email.fileId,
-            filename: state.email.filename,
-            sheet_name: $('#email-sheet').value,
-            header_rows: parseHeaderRows($('#email-header-rows').value),
-            data_start_row: parseInt($('#email-data-start').value),
-            data_end_row: $('#email-data-end').value ? parseInt($('#email-data-end').value) : null,
-            data_end_col: $('#email-data-end-col').value.trim() || null,
-            skip_rows: parseHeaderRows($('#email-skip-rows').value),
-            mapping: emailMapping,
-            overrides: state.email.overrides,
-            deleted_rows: state.email.deletedRows,
-        },
+        email: emailCfg,
     };
 }
 
 // 加载并渲染合并预览
 async function loadImportPreview() {
-    if (!state.salary.fileId || !state.email.fileId) return;
+    if (!state.salary.fileId) return;
+    if (!state.email.fileId && !state.email.skipped) return;
     const table = $('#import-preview-table');
     table.innerHTML = '<tr><td>正在加载合并预览...</td></tr>';
     try {
@@ -2951,18 +2998,7 @@ async function loadImportPreview() {
             state.importPreview.onlyUnmatched = false;
             $('#import-preview-unmatched-btn').classList.remove('active');
         }
-        const statsText = `共 ${res.total} 条（实际导入），已匹配邮箱 ${res.matched} 条，未匹配 ${res.unmatched} 条`;
-        $('#import-preview-stats').textContent = statsText;
-        // 更新顶部摘要：邮箱空白 + 实际匹配数
-        const emptyEmailEl = $('#summary-empty-email');
-        if (emptyEmailEl) {
-            let summaryExtra = '';
-            if (res.unmatched > 0) {
-                summaryExtra += `<p>邮箱空白：<strong class="text-danger">${res.unmatched}</strong> 条（可手动填写或从历史邮箱中选择）</p>`;
-            }
-            summaryExtra += `<p class="hint-text">实际将导入 ${res.total} 条工资记录，其中 ${res.matched} 条已匹配邮箱</p>`;
-            emptyEmailEl.innerHTML = summaryExtra;
-        }
+        updateImportPreviewStats();
         renderImportPreview();
     } catch (err) {
         console.error(err);
@@ -3081,20 +3117,86 @@ function renderImportPreview() {
 }
 
 function updateImportPreviewStats() {
-    const { rows, rowIndices, emailOverrides } = state.importPreview;
+    const { rows, rowIndices, emailOverrides, headers } = state.importPreview;
     if (!rows || !rowIndices) return;
-    const emailIdx = state.importPreview.headers.length - 1;
+    const emailIdx = headers.length - 1;
+    // 找 community 和 name 的索引（从 headers 里推断）
+    let communityIdx = -1, nameIdx = -1;
+    headers.forEach((h, i) => {
+        const hn = (h || '').replace(/\s+/g, '');
+        if (communityIdx < 0 && hn.includes('社区')) communityIdx = i;
+        if (nameIdx < 0 && hn.includes('姓名')) nameIdx = i;
+    });
     let matched = 0, unmatched = 0;
+    const unmatchedTargets = [];
     rows.forEach((r, i) => {
         const curEmail = emailOverrides[rowIndices[i]] !== undefined ? emailOverrides[rowIndices[i]] : r[emailIdx];
-        if (curEmail) matched++; else unmatched++;
+        if (curEmail) {
+            matched++;
+        } else {
+            unmatched++;
+            const community = communityIdx >= 0 ? r[communityIdx] : '';
+            const name = nameIdx >= 0 ? r[nameIdx] : '';
+            unmatchedTargets.push({ rowIndex: rowIndices[i], community, name });
+        }
     });
     state.importPreview.matched = matched;
     state.importPreview.unmatched = unmatched;
+    state.importPreview.unmatchedTargets = unmatchedTargets;
     $('#import-preview-stats').textContent = `共 ${rows.length} 条，已匹配邮箱 ${matched} 条，未匹配 ${unmatched} 条`;
     const emptyEmailEl = $('#summary-empty-email');
     if (emptyEmailEl) {
-        emptyEmailEl.innerHTML = unmatched > 0 ? `<p>邮箱空白：<strong class="text-danger">${unmatched}</strong> 条</p>` : '';
+        if (unmatched > 0) {
+            emptyEmailEl.innerHTML = `
+                <div class="unmatched-box">
+                    <p>邮箱空白：<strong class="text-danger">${unmatched}</strong> 条</p>
+                    <button id="fill-historical-emails" class="btn small primary">🔍 一键查找历史邮箱</button>
+                </div>
+            `;
+            emptyEmailEl.querySelector('#fill-historical-emails')?.addEventListener('click', fillHistoricalEmails);
+        } else {
+            emptyEmailEl.innerHTML = '';
+        }
+    }
+}
+
+async function fillHistoricalEmails() {
+    const targets = state.importPreview.unmatchedTargets || [];
+    if (!targets.length) return;
+    const btn = $('#fill-historical-emails');
+    btn.disabled = true;
+    btn.textContent = '查找中...';
+    try {
+        const data = await postJson('/api/historical-emails', {
+            targets: targets.map(t => ({ community: t.community, name: t.name })),
+        });
+        if (data.error) { infoModal(data.error); return; }
+        const { found, missing } = data;
+        let filled = 0;
+        targets.forEach(t => {
+            const key = `${t.community}|${t.name}`;
+            if (found[key]) {
+                state.importPreview.emailOverrides[t.rowIndex] = found[key].email;
+                filled++;
+            }
+        });
+        updateImportPreviewStats();
+        if (state.importPreview.unmatched === 0 && state.importPreview.onlyUnmatched) {
+            state.importPreview.onlyUnmatched = false;
+            $('#import-preview-unmatched-btn').classList.remove('active');
+        }
+        renderImportPreview();
+        if (filled > 0) {
+            const missCount = missing ? missing.length : 0;
+            infoModal(`找到并填入 ${filled} 条历史邮箱${missCount > 0 ? `，仍有 ${missCount} 条在历史记录中未找到` : ''}。未自动填入的可手动在表格里填写。`);
+        } else {
+            infoModal('在历史导入记录中未找到任何匹配邮箱。');
+        }
+    } catch (e) {
+        infoModal('查询历史邮箱失败：' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '🔍 一键查找历史邮箱';
     }
 }
 

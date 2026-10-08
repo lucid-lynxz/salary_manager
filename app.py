@@ -72,6 +72,8 @@ def init_db():
         month INTEGER NOT NULL,
         salary_filename TEXT,
         email_filename TEXT,
+        email_file_id TEXT,
+        email_config_json TEXT,
         imported_at TEXT NOT NULL,
         UNIQUE(year, month)
     );
@@ -163,6 +165,14 @@ def init_db():
             conn.execute("ALTER TABLE persons ADD COLUMN email_send_status TEXT NOT NULL DEFAULT 'pending'")
         if "email_error_msg" not in columns:
             conn.execute("ALTER TABLE persons ADD COLUMN email_error_msg TEXT")
+
+        # 迁移：为 salary_imports 表添加邮箱文件追踪字段（用于"跳过邮箱表"功能）
+        cur = conn.execute("PRAGMA table_info(salary_imports)")
+        si_cols = [col["name"] for col in cur.fetchall()]
+        if "email_file_id" not in si_cols:
+            conn.execute("ALTER TABLE salary_imports ADD COLUMN email_file_id TEXT")
+        if "email_config_json" not in si_cols:
+            conn.execute("ALTER TABLE salary_imports ADD COLUMN email_config_json TEXT")
 
 
 init_db()
@@ -497,11 +507,27 @@ def detect_salary_fields(headers):
         return re.sub(r"\s+", "", h)
     indexes = {}
     for field, pats in patterns.items():
+        clean_pats = [re.sub(r"\s+", "", p) for p in pats]
+        # 第一轮：精确匹配优先
+        found = None
         for idx, h in enumerate(headers):
             hn = norm(h)
-            if any(re.sub(r"\s+", "", p) in hn for p in pats):
-                indexes[field] = idx
+            if hn in clean_pats:
+                found = idx
                 break
+        # 第二轮：找最短的匹配表头（避免 '岗位工资' 误匹配 '岗位工资等级年限起算时间'）
+        if found is None:
+            best_idx = None
+            best_len = 999
+            for idx, h in enumerate(headers):
+                hn = norm(h)
+                if any(p in hn for p in clean_pats):
+                    if len(hn) < best_len:
+                        best_len = len(hn)
+                        best_idx = idx
+            found = best_idx
+        if found is not None:
+            indexes[field] = found
     return indexes
 
 
@@ -557,7 +583,16 @@ def get_previous_salary_for_person(community, name, before_year, before_month):
         if not row:
             return None, None, None
         data = json.loads(row["data_json"]) if row["data_json"] else {}
-        return data.get("岗位工资"), row["year"], row["month"]
+        post_salary = data.get("岗位工资")
+        # 数据库中存储的可能是字符串，确保转换为 float
+        if post_salary is not None and post_salary != "":
+            try:
+                post_salary = float(post_salary)
+            except (TypeError, ValueError):
+                post_salary = None
+        else:
+            post_salary = None
+        return post_salary, row["year"], row["month"]
 
 
 def get_previous_accounts():
@@ -574,6 +609,23 @@ def get_previous_accounts():
             WHERE p.import_id = ?
         """, (prev_id,)).fetchall()
     return {(r["community"], r["name"]): (r["bank_account"] or "") for r in rows}
+
+
+def get_previous_emails_map():
+    """返回上一次导入的所有有效邮箱 {(community, name): email}。
+    仅取 email_status='valid' 且 email 非空的记录。
+    """
+    with get_db() as conn:
+        row = conn.execute("SELECT id, salary_filename FROM salary_imports ORDER BY year DESC, month DESC, id DESC LIMIT 1").fetchone()
+        if not row:
+            return {}, None
+        prev_id = row["id"]
+        prev_filename = row["salary_filename"]
+        rows = conn.execute("""
+            SELECT community, name, email FROM persons
+            WHERE import_id = ? AND email != '' AND email IS NOT NULL AND email_status = 'valid'
+        """, (prev_id,)).fetchall()
+    return {(r["community"], r["name"]): r["email"] for r in rows}, prev_filename
 
 
 def validate_salary_records(records, headers, field_indexes_override=None, current_year=None, current_month=None):
@@ -877,6 +929,64 @@ def api_history_emails():
     return jsonify({"emails": emails})
 
 
+@app.route("/api/historical-emails", methods=["POST"])
+def api_historical_emails():
+    """批量查询历史邮箱。接收一组 {community, name}，返回每个人最近一次有效邮箱。"""
+    data = request.get_json() or {}
+    targets = data.get("targets") or []  # [{"community": "东山", "name": "张三"}, ...]
+    if not targets:
+        return jsonify({"found": {}, "missing": []})
+
+    # 把列表转成字典方便去重
+    seen = set()
+    unique_keys = []
+    for t in targets:
+        c = str(t.get("community", "")).strip()
+        n = str(t.get("name", "")).strip()
+        if not c or not n:
+            continue
+        key = (c, n)
+        if key not in seen:
+            seen.add(key)
+            unique_keys.append(key)
+
+    if not unique_keys:
+        return jsonify({"found": {}, "missing": []})
+
+    placeholders = ",".join(["(?, ?)"] * len(unique_keys))
+    flat = []
+    for c, n in unique_keys:
+        flat.extend([c, n])
+
+    # 找每个人的最近一次有效邮箱（按 import 的时间倒序取第一条）
+    sql = f"""
+        SELECT p.community, p.name, p.email, p.email_status, si.year, si.month
+        FROM persons p
+        JOIN salary_imports si ON p.import_id = si.id
+        WHERE p.email != '' AND p.email IS NOT NULL
+          AND (p.community, p.name) IN ({placeholders})
+        ORDER BY si.year DESC, si.month DESC, si.id DESC
+    """
+    with get_db() as conn:
+        rows = conn.execute(sql, flat).fetchall()
+
+    found = {}
+    found_keys = set()
+    for r in rows:
+        key = (r["community"], r["name"])
+        if key in found_keys:
+            continue  # 已经有更近的记录了
+        found_keys.add(key)
+        found[f"{key[0]}|{key[1]}"] = {
+            "email": r["email"],
+            "status": r["email_status"],
+            "period": f"{r['year']}-{r['month']:02d}",
+        }
+
+    missing = [{"community": c, "name": n} for c, n in unique_keys if (c, n) not in found_keys]
+    return jsonify({"found": found, "missing": missing})
+
+
 @app.route("/api/preview", methods=["POST"])
 def api_preview():
     if "file" not in request.files:
@@ -1125,36 +1235,43 @@ def api_import_preview():
     salary_cfg = data.get("salary") or {}
     email_cfg = data.get("email") or {}
 
-    if not salary_cfg or not email_cfg:
-        return jsonify({"error": "请同时配置工资表和邮箱表"}), 400
+    if not salary_cfg:
+        return jsonify({"error": "请配置工资表"}), 400
 
     salary_path = UPLOAD_DIR / salary_cfg["file_id"]
-    email_path = UPLOAD_DIR / email_cfg["file_id"]
-    if not salary_path.exists() or not email_path.exists():
-        return jsonify({"error": "上传文件已失效，请重新上传"}), 400
+    if not salary_path.exists():
+        return jsonify({"error": "工资表文件已失效，请重新上传"}), 400
+
+    email_skipped = bool(email_cfg.get("skipped"))
+    if not email_skipped:
+        email_path = UPLOAD_DIR / email_cfg.get("file_id", "")
+        if not email_path.exists():
+            return jsonify({"error": "邮箱表文件已失效，请重新上传"}), 400
+    else:
+        email_path = None
 
     try:
-        # 解析邮箱表
-        edf = read_excel_raw(email_path, email_cfg["sheet_name"])
-        edf = apply_column_limit(edf, email_cfg.get("data_end_col"))
-        e_header_rows = [int(r) - 1 for r in email_cfg.get("header_rows", [1])]
-        e_data_start = int(email_cfg.get("data_start_row", 2)) - 1
-        e_data_end = int(email_cfg["data_end_row"]) if email_cfg.get("data_end_row") else None
-        e_mapping = email_cfg.get("mapping", {})
-        email_records, _ = parse_records(edf, e_header_rows, e_data_start, e_data_end, e_mapping,
-                                         skip_rows=email_cfg.get("skip_rows", []), is_email=True)
-
-        overrides = email_cfg.get("overrides") or {}
-        email_deleted_rows = set(email_cfg.get("deleted_rows") or [])
+        # 构建 email_map
         email_map = {}
-        for r in email_records:
-            if r.get("_row_index") in email_deleted_rows:
-                continue
-            community, name, raw_email = apply_email_row_override(r, overrides)
-            if not community or not name:
-                continue
-            email, _, _ = validate_email(raw_email, set())
-            email_map[(community, name)] = email
+        if not email_skipped:
+            edf = read_excel_raw(email_path, email_cfg["sheet_name"])
+            edf = apply_column_limit(edf, email_cfg.get("data_end_col"))
+            e_header_rows = [int(r) - 1 for r in email_cfg.get("header_rows", [1])]
+            e_data_start = int(email_cfg.get("data_start_row", 2)) - 1
+            e_data_end = int(email_cfg["data_end_row"]) if email_cfg.get("data_end_row") else None
+            e_mapping = email_cfg.get("mapping", {})
+            email_records, _ = parse_records(edf, e_header_rows, e_data_start, e_data_end, e_mapping,
+                                             skip_rows=email_cfg.get("skip_rows", []), is_email=True)
+            overrides = email_cfg.get("overrides") or {}
+            email_deleted_rows = set(email_cfg.get("deleted_rows") or [])
+            for r in email_records:
+                if r.get("_row_index") in email_deleted_rows:
+                    continue
+                community, name, raw_email = apply_email_row_override(r, overrides)
+                if not community or not name:
+                    continue
+                email, _, _ = validate_email(raw_email, set())
+                email_map[(community, name)] = email
 
         # 解析工资表
         sdf = read_excel_raw(salary_path, salary_cfg["sheet_name"])
@@ -1217,6 +1334,7 @@ def api_import_preview():
             "total": len(rows),
             "matched": matched,
             "unmatched": unmatched,
+            "email_skipped": email_skipped,
         })
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -1230,56 +1348,62 @@ def api_import():
     year = data.get("year")
     month = data.get("month")
 
-    if not salary_cfg or not email_cfg:
-        return jsonify({"error": "请同时配置工资表和邮箱表"}), 400
+    if not salary_cfg:
+        return jsonify({"error": "请配置工资表"}), 400
     if year is None or month is None:
         return jsonify({"error": "请选择工资单年月"}), 400
 
     salary_path = UPLOAD_DIR / salary_cfg["file_id"]
-    email_path = UPLOAD_DIR / email_cfg["file_id"]
-    if not salary_path.exists() or not email_path.exists():
-        return jsonify({"error": "上传文件已失效，请重新上传"}), 400
+    if not salary_path.exists():
+        return jsonify({"error": "工资表文件已失效，请重新上传"}), 400
+
+    email_skipped = bool(email_cfg.get("skipped"))
+    if not email_skipped:
+        email_path = UPLOAD_DIR / email_cfg.get("file_id", "")
+        if not email_path.exists():
+            return jsonify({"error": "邮箱表文件已失效，请重新上传"}), 400
 
     try:
-        # 解析邮箱
-        edf = read_excel_raw(email_path, email_cfg["sheet_name"])
-        edf = apply_column_limit(edf, email_cfg.get("data_end_col"))
-        e_header_rows = [int(r) - 1 for r in email_cfg.get("header_rows", [1])]
-        e_data_start = int(email_cfg.get("data_start_row", 2)) - 1
-        e_data_end = int(email_cfg["data_end_row"]) if email_cfg.get("data_end_row") else None
-        e_mapping = email_cfg.get("mapping", {})
-        email_records, _ = parse_records(edf, e_header_rows, e_data_start, e_data_end, e_mapping, skip_rows=email_cfg.get("skip_rows", []), is_email=True)
-
-        # 应用用户在前端修正的邮箱覆盖
-        overrides = email_cfg.get("overrides") or {}
-        email_deleted_rows = set(email_cfg.get("deleted_rows") or [])
-
-        # 校验并构建 (community, name) -> email info
-        seen_emails = set()
+        # 构建 email_map
         email_map = {}
         email_issues = []
-        for r in email_records:
-            if r.get("_row_index") in email_deleted_rows:
-                continue
-            community, name, raw_email = apply_email_row_override(r, overrides)
-            key = (community, name)
-            if not key[0] or not key[1]:
-                continue
-            email, status, errs = validate_email(raw_email, seen_emails)
-            seen_emails.add(email)
-            email_map[key] = {
-                "email": email,
-                "status": status,
-                "issues": ";".join(errs),
-            }
-            if errs:
-                email_issues.append({
-                    "community": key[0],
-                    "name": key[1],
-                    "raw": raw_email,
-                    "cleaned": email,
-                    "errors": errs,
-                })
+        if not email_skipped:
+            # 解析邮箱
+            edf = read_excel_raw(email_path, email_cfg["sheet_name"])
+            edf = apply_column_limit(edf, email_cfg.get("data_end_col"))
+            e_header_rows = [int(r) - 1 for r in email_cfg.get("header_rows", [1])]
+            e_data_start = int(email_cfg.get("data_start_row", 2)) - 1
+            e_data_end = int(email_cfg["data_end_row"]) if email_cfg.get("data_end_row") else None
+            e_mapping = email_cfg.get("mapping", {})
+            email_records, _ = parse_records(edf, e_header_rows, e_data_start, e_data_end, e_mapping, skip_rows=email_cfg.get("skip_rows", []), is_email=True)
+
+            # 应用用户在前端修正的邮箱覆盖
+            overrides = email_cfg.get("overrides") or {}
+            email_deleted_rows = set(email_cfg.get("deleted_rows") or [])
+
+            seen_emails = set()
+            for r in email_records:
+                if r.get("_row_index") in email_deleted_rows:
+                    continue
+                community, name, raw_email = apply_email_row_override(r, overrides)
+                key = (community, name)
+                if not key[0] or not key[1]:
+                    continue
+                email, status, errs = validate_email(raw_email, seen_emails)
+                seen_emails.add(email)
+                email_map[key] = {
+                    "email": email,
+                    "status": status,
+                    "issues": ";".join(errs),
+                }
+                if errs:
+                    email_issues.append({
+                        "community": key[0],
+                        "name": key[1],
+                        "raw": raw_email,
+                        "cleaned": email,
+                        "errors": errs,
+                    })
 
         # 解析工资表
         sdf = read_excel_raw(salary_path, salary_cfg["sheet_name"])
@@ -1309,11 +1433,26 @@ def api_import():
         email_overrides = salary_cfg.get("email_overrides") or {}
 
         # 写入数据库
+        # 保存邮箱表配置用于"跳过邮箱表"功能（下次导入时可复用）
+        email_file_id_to_save = None if email_skipped else (email_cfg.get("file_id") or None)
+        email_config_to_save = {} if email_skipped else {
+            "sheet_name": email_cfg.get("sheet_name"),
+            "header_rows": email_cfg.get("header_rows"),
+            "data_start_row": email_cfg.get("data_start_row"),
+            "data_end_row": email_cfg.get("data_end_row"),
+            "data_end_col": email_cfg.get("data_end_col"),
+            "skip_rows": email_cfg.get("skip_rows", []),
+            "mapping": email_cfg.get("mapping", {}),
+        }
         with get_db() as conn:
             cur = conn.execute(
-                "INSERT OR REPLACE INTO salary_imports (year, month, salary_filename, email_filename, imported_at) "
-                "VALUES (?, ?, ?, ?, ?)",
-                (int(year), int(month), salary_cfg.get("filename", ""), email_cfg.get("filename", ""), datetime.datetime.now().isoformat())
+                "INSERT OR REPLACE INTO salary_imports (year, month, salary_filename, email_filename, email_file_id, email_config_json, imported_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (int(year), int(month), salary_cfg.get("filename", ""),
+                 "" if email_skipped else email_cfg.get("filename", ""),
+                 email_file_id_to_save,
+                 json.dumps(email_config_to_save, ensure_ascii=False),
+                 datetime.datetime.now().isoformat())
             )
             import_id = cur.lastrowid
 

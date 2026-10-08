@@ -256,6 +256,28 @@ h3 { font-size: 16px; margin: 20px 0 12px; }
     border-top: 1px solid var(--border);
 }
 
+.skipped-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    margin-bottom: 16px;
+    background: var(--card);
+    border: 1px dashed var(--primary);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-size: 14px;
+}
+.skipped-banner span { font-weight: 500; }
+
+.unmatched-box {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-top: 8px;
+}
+.unmatched-box p { margin: 0; }
+
 .hidden { display: none !important; }
 
 .preview-area, .config-panel { margin-top: 20px; }
