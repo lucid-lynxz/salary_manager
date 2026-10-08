@@ -3097,6 +3097,17 @@ function renderImportPreview() {
                 // 移除已有的下拉
                 cell.querySelector('.history-email-dropdown')?.remove();
                 cell.appendChild(dropdown);
+                const closeOnOutside = (ev) => {
+                    if (!dropdown.isConnected) {
+                        document.removeEventListener('mousedown', closeOnOutside, true);
+                        return;
+                    }
+                    if (!dropdown.contains(ev.target) && ev.target !== btn) {
+                        dropdown.remove();
+                        document.removeEventListener('mousedown', closeOnOutside, true);
+                    }
+                };
+                setTimeout(() => document.addEventListener('mousedown', closeOnOutside, true), 0);
                 dropdown.querySelectorAll('.history-email-item').forEach(item => {
                     item.addEventListener('click', () => {
                         const email = item.dataset.email;
