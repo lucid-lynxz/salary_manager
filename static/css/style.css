@@ -494,7 +494,8 @@ tr.omitted-row td.omitted-cell {
 .history-email-dropdown {
     position: absolute;
     z-index: 100;
-    background: #fff;
+    background: var(--card);
+    color: var(--text);
     border: 1px solid var(--border);
     border-radius: 4px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.15);
@@ -509,7 +510,16 @@ tr.omitted-row td.omitted-cell {
     white-space: nowrap;
 }
 .history-email-item:hover {
-    background: #f3f4f6;
+    background: var(--bg);
+}
+/* 深色模式下覆盖浏览器自动填充的白底，避免文字看不清 */
+html[data-theme="dark"] .email-edit-input:-webkit-autofill,
+html[data-theme="dark"] .email-edit-input:-webkit-autofill:hover,
+html[data-theme="dark"] .email-edit-input:-webkit-autofill:focus {
+    -webkit-box-shadow: 0 0 0 1000px #1e293b inset;
+    -webkit-text-fill-color: #e2e8f0;
+    caret-color: #e2e8f0;
+    transition: background-color 99999s ease-in-out 0s;
 }
 @keyframes pulse {
     0%, 100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.5); }
