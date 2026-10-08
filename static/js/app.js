@@ -2268,6 +2268,10 @@ $('#skip-email-btn').addEventListener('click', async () => {
     banner.querySelector('span').textContent = '📮 已跳过邮箱表，可在"确认导入"页一键查找历史邮箱';
     unlockStep(3);
     $('#to-step3').disabled = false;
+    // 跳过确认后直接进入"确认导入"页，无需再手动点击
+    buildSummary();
+    goStep(3);
+    loadImportPreview();
 });
 
 // 重新上传：取消跳过状态，让用户选择新文件
