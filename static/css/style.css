@@ -718,7 +718,7 @@ html[data-theme="dark"] .send-progress-complete {
     border-radius: 4px;
     font-size: inherit;
     font-family: inherit;
-    background: var(--bg-card, #fff);
+    background: var(--card);
     color: var(--text);
     outline: none;
     box-sizing: border-box;
@@ -1490,7 +1490,7 @@ html[data-theme="dark"] .flatpickr-day.today { border-color: var(--primary); }
 }
 
 .sender-card {
-    background: var(--bg-card);
+    background: var(--card);
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 16px;
@@ -1726,7 +1726,7 @@ input[type="number"] {
     align-items: center;
     margin-bottom: 16px;
     padding: 12px;
-    background: var(--bg-card);
+    background: var(--card);
     border: 1px solid var(--border);
     border-radius: 6px;
 }
@@ -1861,7 +1861,7 @@ html[data-theme="dark"] .status-badge.status-invalid {
 
 .send-results {
     padding: 16px;
-    background: var(--bg-card);
+    background: var(--card);
     border: 1px solid var(--border);
     border-radius: 6px;
 }
