@@ -3864,7 +3864,7 @@ async function showImportStatsTable() {
                 <tbody>
                     ${rows.map(row => `
                         <tr data-import-id="${row.import_id}">
-                            <td><strong>${row.year}年${row.month}月</strong><div class="stats-prev-tip">${escapeHtml(row.prev_label || '') || '—'}</div></td>
+                            <td><strong>${row.year}年${row.month}月</strong><div class="stats-prev-tip">${row.prev_label ? '对比: ' + escapeHtml(row.prev_label) : '无上月可对比'}</div></td>
                             ${STATS_METRICS.map(m => `<td class="stats-num-td">${fmtCell(row, m)}</td>`).join('')}
                             <td style="color:${row.email_missing ? 'var(--warning)' : 'var(--muted)'}">${row.email_missing}</td>
                             ${row.prev_label
