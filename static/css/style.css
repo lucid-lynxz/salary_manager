@@ -1066,6 +1066,15 @@ html[data-theme="dark"] .stat-value { color: #e2e8f0; }
 }
 .chart-btn:hover { transform: scale(1.15); }
 .stats-table td.stats-num-td { text-align: right; white-space: nowrap; }
+.search-results-table.stats-table { border-collapse: separate; border-spacing: 0; overflow: visible; }
+.search-results-table.stats-table th + th,
+.search-results-table.stats-table td + td { border-left-width: 0; }
+.search-results-table.stats-table tbody td { border-top-width: 0; }
+.search-results-table.stats-table td.freeze-1 { background: #fff; }
+.search-results-table.stats-table thead th.freeze-1 { background: var(--bg); }
+html[data-theme="dark"] .search-results-table.stats-table td.freeze-1 { background: #1e293b; }
+html[data-theme="dark"] .search-results-table.stats-table thead th.freeze-1 { background: #334155; }
+.stats-table td.stats-month-cell { white-space: nowrap; }
 .stats-change-cell { cursor: pointer; text-align: center; white-space: nowrap; }
 .stats-change-cell[data-change]:hover { background: var(--bg); }
 .stats-change-cell:not([data-change]) { cursor: default; }

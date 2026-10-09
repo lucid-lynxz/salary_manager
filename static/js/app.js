@@ -3855,8 +3855,8 @@ async function showImportStatsTable() {
         <div class="table-wrap">
             <table class="search-results-table stats-table">
                 <thead><tr>
-                    <th>年月</th>
-                    ${STATS_METRICS.map(m => `<th class="stats-num-th" data-metric="${m.key}" title="点击查看${m.label}跨月趋势折线图">${m.label}<button class="chart-btn" type="button" data-metric="${m.key}" data-label="${m.label}">📈</button></th>`).join('')}
+                    <th class="freeze-1">年月</th>
+                    ${STATS_METRICS.map(m => `<th class="stats-num-th" data-metric="${m.key}" title="点击查看${m.label}跨月趋势折线图">${m.label}<button class="chart-btn" type="button" data-metric="${m.key}" data-label="${m.label}" data-int="${m.money ? 0 : 1}">📈</button></th>`).join('')}
                     <th>邮箱空白</th>
                     <th>人员变更</th>
                     <th>岗位工资变更</th>
@@ -3866,7 +3866,7 @@ async function showImportStatsTable() {
                 <tbody>
                     ${viewRows.map((row, i) => `
                         <tr data-import-id="${row.import_id}">
-                            <td><strong>${row.year}年${row.month}月</strong>${i < viewRows.length - 1 ? '' : '<div class="stats-prev-tip">无上月可对比</div>'}</td>
+                            <td class="stats-month-cell freeze-1">${row.year}年${row.month}月${i < viewRows.length - 1 ? '' : '<div class="stats-prev-tip">无上月可对比</div>'}</td>
                             ${STATS_METRICS.map(m => `<td class="stats-num-td">${fmtCell(row, m)}</td>`).join('')}
                             <td style="color:${row.email_missing ? 'var(--warning)' : 'var(--muted)'}">${row.email_missing}</td>
                             ${row.prev_label
@@ -3886,7 +3886,7 @@ async function showImportStatsTable() {
     body.querySelectorAll('.chart-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            showImportTrendChart(btn.dataset.metric, btn.dataset.label);
+            showImportTrendChart(btn.dataset.metric, btn.dataset.label, btn.dataset.int === '1');
         });
     });
     body.querySelectorAll('.stats-change-cell[data-change]').forEach(cell => {
@@ -3932,10 +3932,11 @@ function renderStatsChangeDetail(type, list, prefix = '') {
         <div class="table-wrap"><table class="search-results-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
-function showImportTrendChart(metric, label) {
+function showImportTrendChart(metric, label, isInt = false) {
     const rows = _statsRowsCache || [];
     if (rows.length < 2) { infoModal('至少需要 2 个月的导入记录才能查看趋势图。'); return; }
 
+    const fmt = isInt ? (v => String(Math.round(v * 100) / 100)) : fmtMoney;
     const rawPoints = rows.map(row => ({
         xLabel: `${row.year}-${String(row.month).padStart(2, '0')}`,
         value: Number(row[metric]) || 0,
@@ -3959,12 +3960,12 @@ function showImportTrendChart(metric, label) {
     body.innerHTML = `
         <h2>导入趋势 · ${escapeHtml(label)}</h2>
         <div class="chart-stats">
-            <div class="stat-card"><div class="stat-label">最小值</div><div class="stat-value" style="color:#dc2626">${fmtMoney(min)}</div></div>
-            <div class="stat-card"><div class="stat-label">最大值</div><div class="stat-value" style="color:#16a34a">${fmtMoney(max)}</div></div>
-            <div class="stat-card"><div class="stat-label">中位数</div><div class="stat-value">${fmtMoney(median)}</div></div>
-            <div class="stat-card"><div class="stat-label">平均值</div><div class="stat-value">${fmtMoney(avg)}</div></div>
-            <div class="stat-card"><div class="stat-label">求和</div><div class="stat-value">${fmtMoney(sum)}</div></div>
-            <div class="stat-card"><div class="stat-label">标准差</div><div class="stat-value">${fmtMoney(stdDev)}</div></div>
+            <div class="stat-card"><div class="stat-label">最小值</div><div class="stat-value" style="color:#dc2626">${fmt(min)}</div></div>
+            <div class="stat-card"><div class="stat-label">最大值</div><div class="stat-value" style="color:#16a34a">${fmt(max)}</div></div>
+            <div class="stat-card"><div class="stat-label">中位数</div><div class="stat-value">${fmt(median)}</div></div>
+            <div class="stat-card"><div class="stat-label">平均值</div><div class="stat-value">${fmt(avg)}</div></div>
+            <div class="stat-card"><div class="stat-label">求和</div><div class="stat-value">${fmt(sum)}</div></div>
+            <div class="stat-card"><div class="stat-label">标准差</div><div class="stat-value">${fmt(stdDev)}</div></div>
         </div>
         <div class="chart-container"><canvas id="col-chart"></canvas></div>
     `;
@@ -4021,7 +4022,11 @@ function showImportTrendChart(metric, label) {
                 plugins: { legend: { labels: { color: tickColor } } },
                 scales: {
                     x: { title: { display: true, text: '导入年月', color: tickColor }, ticks: { color: tickColor }, grid: { color: gridColor } },
-                    y: { title: { display: true, text: label, color: tickColor }, ticks: { color: tickColor }, grid: { color: gridColor } },
+                    y: {
+                        title: { display: true, text: label, color: tickColor },
+                        ticks: { color: tickColor, precision: isInt ? 0 : undefined, callback: v => fmt(Number(v)) },
+                        grid: { color: gridColor },
+                    },
                 },
             },
         });
