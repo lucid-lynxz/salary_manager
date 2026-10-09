@@ -290,9 +290,10 @@
             <!-- 发件人管理 -->
             <section id="tab-senders" class="tab-panel">
                 <div class="sender-management">
-                    <div class="panel-header">
+                    <div class="history-toolbar">
+                        <button class="btn secondary small" onclick="showAddSenderModal()" type="button">➕ 添加</button>
+                        <span class="history-toolbar-tip">维护发送工资单邮件的 SMTP 发件账号，添加后可测试连通性并启用 / 停用</span>
                         <span id="senders-summary" class="senders-summary"></span>
-                        <button class="btn primary" onclick="showAddSenderModal()">添加发件人</button>
                     </div>
                     <div id="senders-list" class="senders-list">
                         <p class="loading-text">加载中...</p>
