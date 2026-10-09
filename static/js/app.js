@@ -924,7 +924,8 @@ document.addEventListener('keydown', (e) => {
     });
     const top = sorted[0];
     const id = top.id;
-    if (id === 'chart-modal') closeChartModal();
+    if (id === 'stats-detail-modal') closeStatsDetailModal();
+    else if (id === 'chart-modal') closeChartModal();
     else if (id === 'sender-modal') closeSenderModal();
     else if (id === 'test-email-modal') closeTestEmailModal();
     else if (id === 'modal') {
@@ -940,6 +941,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (cm) {
         cm.addEventListener('click', (e) => {
             if (e.target === cm) closeChartModal();
+        });
+    }
+    const sdm = $('#stats-detail-modal');
+    if (sdm) {
+        sdm.addEventListener('click', (e) => {
+            if (e.target === sdm) closeStatsDetailModal();
         });
     }
     const statsBtn = $('#import-stats-btn');
@@ -3879,8 +3886,7 @@ async function showImportStatsTable() {
                 </tbody>
             </table>
         </div>
-        <p style="font-size:12px;color:var(--muted);margin-top:8px;">提示：按年月倒序排列，各「变更」列即与下一行（上月）对比；点击 📈 查看数值列跨月趋势折线图，点击「变更」单元格查看对比明细。</p>
-        <div id="import-stats-detail"></div>
+        <p style="font-size:12px;color:var(--muted);margin-top:8px;">提示：按年月倒序排列，各「变更」列即与下一行（上月）对比；点击 📈 查看数值列跨月趋势折线图，点击「变更」单元格弹窗查看对比明细。</p>
     `;
 
     body.querySelectorAll('.chart-btn').forEach(btn => {
@@ -3895,41 +3901,73 @@ async function showImportStatsTable() {
             const row = _statsRowsCache.find(r => r.import_id === Number(tr.dataset.importId));
             if (!row) return;
             const type = cell.dataset.change;
-            const wasActive = cell.classList.contains('active');
-            body.querySelectorAll('.stats-change-cell').forEach(c => c.classList.remove('active'));
-            const box = body.querySelector('#import-stats-detail');
-            if (wasActive) { box.innerHTML = ''; return; }
-            cell.classList.add('active');
-            const cmp = row.prev_label ? `${row.year}年${row.month}月 对比 ${row.prev_label}` : `${row.year}年${row.month}月`;
-            box.innerHTML = renderStatsChangeDetail(type, row.changes[type], `${cmp} · `);
-            box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            openStatsDetailModal(type, row);
         });
     });
 }
 
-function renderStatsChangeDetail(type, list, prefix = '') {
-    const titleMap = {
-        added: '新增人员名单', removed: '减少人员名单',
-        post_salary: '岗位工资变更明细', email: '邮箱信息变更明细', account: '银行账号变更明细',
-    };
-    if (!list || !list.length) return `<h3>${prefix}${titleMap[type]}：无变化</h3>`;
-    let head, rows;
-    if (type === 'added' || type === 'removed') {
-        head = '<th>社区</th><th>姓名</th>';
-        rows = list.map(x => `<tr><td>${escapeHtml(x.community)}</td><td>${escapeHtml(x.name)}</td></tr>`).join('');
-    } else if (type === 'post_salary') {
-        head = '<th>社区</th><th>姓名</th><th>上月</th><th>本月</th><th>相差</th>';
-        rows = list.map(x => {
-            const color = x.diff > 0 ? 'var(--success)' : 'var(--danger)';
-            const sign = x.diff > 0 ? '+' : '';
-            return `<tr><td>${escapeHtml(x.community)}</td><td>${escapeHtml(x.name)}</td><td>${x.prev == null ? '—' : fmtMoney(x.prev)}</td><td>${x.cur == null ? '—' : fmtMoney(x.cur)}</td><td style="color:${color}">${sign}${fmtMoney(x.diff)}</td></tr>`;
+const STATS_CHANGE_TITLES = {
+    added: '新增人员名单', removed: '减少人员名单',
+    post_salary: '岗位工资变更明细', email: '邮箱信息变更明细', account: '银行账号变更明细',
+};
+
+function openStatsDetailModal(type, row) {
+    const list = row.changes[type] || [];
+    const title = STATS_CHANGE_TITLES[type] || '变更明细';
+    const cmp = row.prev_label ? `${row.year}年${row.month}月 对比 ${row.prev_label}` : `${row.year}年${row.month}月`;
+    const body = $('#stats-detail-modal-body');
+
+    let head;
+    if (type === 'added' || type === 'removed') head = '<th>社区</th><th>姓名</th>';
+    else if (type === 'post_salary') head = '<th>社区</th><th>姓名</th><th>上月</th><th>本月</th><th>相差</th>';
+    else head = '<th>社区</th><th>姓名</th><th>上月</th><th>本月</th>';
+
+    body.innerHTML = `
+        <h2>${escapeHtml(cmp)} · ${escapeHtml(title)}（${list.length} 条）</h2>
+        <div class="stats-detail-filter">
+            <input type="text" id="stats-detail-search" placeholder="按社区 / 姓名筛选" autocomplete="off">
+            <span id="stats-detail-count" class="stats-detail-count"></span>
+        </div>
+        <div class="table-wrap stats-detail-wrap">
+            <table class="search-results-table stats-detail-table">
+                <thead><tr>${head}</tr></thead>
+                <tbody id="stats-detail-tbody"></tbody>
+            </table>
+        </div>
+    `;
+
+    const input = $('#stats-detail-search');
+    const render = () => {
+        const kw = input.value.trim().toLowerCase();
+        const filtered = kw
+            ? list.filter(x => (`${x.community}${x.name}`).toLowerCase().includes(kw))
+            : list;
+        $('#stats-detail-count').textContent = kw ? `匹配 ${filtered.length} / ${list.length} 条` : `共 ${list.length} 条`;
+        const tbody = $('#stats-detail-tbody');
+        if (!filtered.length) {
+            const span = (type === 'post_salary') ? 5 : (type === 'email' || type === 'account' ? 4 : 2);
+            tbody.innerHTML = `<tr><td colspan="${span}" style="text-align:center;color:var(--muted);padding:24px">${list.length ? '无匹配记录' : '本次与上月无变化'}</td></tr>`;
+            return;
+        }
+        tbody.innerHTML = filtered.map(x => {
+            if (type === 'added' || type === 'removed') {
+                return `<tr><td>${escapeHtml(x.community)}</td><td>${escapeHtml(x.name)}</td></tr>`;
+            }
+            if (type === 'post_salary') {
+                const color = x.diff > 0 ? 'var(--success)' : 'var(--danger)';
+                const sign = x.diff > 0 ? '+' : '';
+                return `<tr><td>${escapeHtml(x.community)}</td><td>${escapeHtml(x.name)}</td><td>${x.prev == null ? '—' : fmtMoney(x.prev)}</td><td>${x.cur == null ? '—' : fmtMoney(x.cur)}</td><td style="color:${color}">${sign}${fmtMoney(x.diff)}</td></tr>`;
+            }
+            return `<tr><td>${escapeHtml(x.community)}</td><td>${escapeHtml(x.name)}</td><td>${escapeHtml(x.prev || '') || '—'}</td><td>${escapeHtml(x.cur || '') || '—'}</td></tr>`;
         }).join('');
-    } else {
-        head = '<th>社区</th><th>姓名</th><th>上月</th><th>本月</th>';
-        rows = list.map(x => `<tr><td>${escapeHtml(x.community)}</td><td>${escapeHtml(x.name)}</td><td>${escapeHtml(x.prev || '') || '—'}</td><td>${escapeHtml(x.cur || '') || '—'}</td></tr>`).join('');
-    }
-    return `<h3>${prefix}${titleMap[type]}（${list.length} 条）</h3>
-        <div class="table-wrap"><table class="search-results-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
+    };
+    input.addEventListener('input', render);
+    render();
+    show($('#stats-detail-modal'));
+}
+
+function closeStatsDetailModal() {
+    hide($('#stats-detail-modal'));
 }
 
 function showImportTrendChart(metric, label) {
