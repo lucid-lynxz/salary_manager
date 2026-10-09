@@ -3856,7 +3856,7 @@ async function showImportStatsTable() {
             <table class="search-results-table stats-table">
                 <thead><tr>
                     <th class="freeze-1">年月</th>
-                    ${STATS_METRICS.map(m => `<th class="stats-num-th" data-metric="${m.key}" title="点击查看${m.label}跨月趋势折线图">${m.label}<button class="chart-btn" type="button" data-metric="${m.key}" data-label="${m.label}" data-int="${m.money ? 0 : 1}">📈</button></th>`).join('')}
+                    ${STATS_METRICS.map(m => `<th class="stats-num-th" data-metric="${m.key}" title="点击查看${m.label}跨月趋势折线图">${m.label}<button class="chart-btn" type="button" data-metric="${m.key}" data-label="${m.label}">📈</button></th>`).join('')}
                     <th>邮箱空白</th>
                     <th>人员变更</th>
                     <th>岗位工资变更</th>
@@ -3886,7 +3886,7 @@ async function showImportStatsTable() {
     body.querySelectorAll('.chart-btn').forEach(btn => {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
-            showImportTrendChart(btn.dataset.metric, btn.dataset.label, btn.dataset.int === '1');
+            showImportTrendChart(btn.dataset.metric, btn.dataset.label);
         });
     });
     body.querySelectorAll('.stats-change-cell[data-change]').forEach(cell => {
@@ -3932,11 +3932,16 @@ function renderStatsChangeDetail(type, list, prefix = '') {
         <div class="table-wrap"><table class="search-results-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
 }
 
-function showImportTrendChart(metric, label, isInt = false) {
+function showImportTrendChart(metric, label) {
     const rows = _statsRowsCache || [];
     if (rows.length < 2) { infoModal('至少需要 2 个月的导入记录才能查看趋势图。'); return; }
 
-    const fmt = isInt ? (v => String(Math.round(v * 100) / 100)) : fmtMoney;
+    // 去掉无意义的小数位：40950.00 -> 40950，41288.20 -> 41288.2
+    const fmt = v => {
+        const n = Number(v);
+        if (!isFinite(n)) return '-';
+        return String(parseFloat(n.toFixed(2)));
+    };
     const rawPoints = rows.map(row => ({
         xLabel: `${row.year}-${String(row.month).padStart(2, '0')}`,
         value: Number(row[metric]) || 0,
@@ -4019,12 +4024,34 @@ function showImportTrendChart(metric, label, isInt = false) {
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                plugins: { legend: { labels: { color: tickColor } } },
+                plugins: {
+                    legend: { labels: { color: tickColor } },
+                    tooltip: {
+                        callbacks: {
+                            label: (ctx) => {
+                                const v = Number(ctx.parsed.y);
+                                if (ctx.datasetIndex !== 0) return `${ctx.dataset.label}: ${fmt(v)}`;
+                                const lines = [`${ctx.dataset.label}: ${fmt(v)}`];
+                                const i = ctx.dataIndex;
+                                if (i > 0) {
+                                    const prev = values[i - 1];
+                                    const diff = v - prev;
+                                    const sign = diff >= 0 ? '+' : '-';
+                                    const pctStr = prev !== 0
+                                        ? ` (${sign}${String(parseFloat((Math.abs(diff / prev) * 100).toFixed(2)))}%)`
+                                        : '';
+                                    lines.push(`较上月: ${sign}${fmt(Math.abs(diff))}${pctStr}`);
+                                }
+                                return lines;
+                            },
+                        },
+                    },
+                },
                 scales: {
                     x: { title: { display: true, text: '导入年月', color: tickColor }, ticks: { color: tickColor }, grid: { color: gridColor } },
                     y: {
                         title: { display: true, text: label, color: tickColor },
-                        ticks: { color: tickColor, precision: isInt ? 0 : undefined, callback: v => fmt(Number(v)) },
+                        ticks: { color: tickColor, precision: 0, callback: v => fmt(Number(v)) },
                         grid: { color: gridColor },
                     },
                 },
