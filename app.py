@@ -3190,7 +3190,7 @@ def api_package_project():
     suffix = "_with_db" if include_db else ""
     zip_path = packages_dir / f"salary_manager_{timestamp}{suffix}.zip"
 
-    exclude_dirs = {"__pycache__", "logs", ".git", "packages", ".idea", ".aicoding-chat-workspace", "uploads", "venv", ".venv", "assets"}
+    exclude_dirs = {"__pycache__", "logs", ".git", "packages", ".idea", ".aicoding-chat-workspace", "uploads", "exports", "venv", ".venv", "assets"}
     exclude_files = {".DS_Store", "Thumbs.db", ".app.pid"}
     if include_db:
         exclude_suffixes = (".db-wal", ".db-shm", ".log")
