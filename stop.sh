@@ -27,7 +27,10 @@ port_pids() {
 stop_pid() {
     local pid="$1"
     if [ "$IS_WINDOWS" = "1" ]; then
-        taskkill //F //PID "$pid" 2>/dev/null || true
+        if ! taskkill //F //PID "$pid" >/dev/null 2>&1; then
+            echo "停止进程 $pid 失败：可能权限不足（目标进程以管理员或其他用户运行），请以管理员身份重试"
+            return 1
+        fi
     else
         kill "$pid" 2>/dev/null || true
         sleep 1
@@ -35,6 +38,7 @@ stop_pid() {
             kill -9 "$pid" 2>/dev/null || true
         fi
     fi
+    return 0
 }
 
 STOPPED=0
@@ -44,7 +48,7 @@ if [ -f "$PID_FILE" ]; then
     PID=$(cat "$PID_FILE")
     if ps -p "$PID" > /dev/null 2>&1; then
         echo "正在停止服务 (PID: $PID)..."
-        stop_pid "$PID"
+        stop_pid "$PID" || true
         STOPPED=1
     else
         echo "PID 文件中的进程 (PID: $PID) 已不存在"
@@ -58,13 +62,20 @@ if [ "$STOPPED" = "0" ]; then
     if [ -n "$PIDS" ]; then
         echo "未找到 PID 文件，检测到端口 $PORT 监听进程: $(echo "$PIDS" | tr '\n' ' ')，正在停止..."
         for pid in $PIDS; do
-            stop_pid "$pid"
+            stop_pid "$pid" || true
         done
         STOPPED=1
     fi
 fi
 
 if [ "$STOPPED" = "1" ]; then
+    # 停止后复查端口，确认真的释放
+    sleep 1
+    LEFT=$(port_pids)
+    if [ -n "$LEFT" ]; then
+        echo "警告：端口 $PORT 仍被进程 $(echo "$LEFT" | tr '\n' ' ') 占用，停止未成功（通常是权限不足）"
+        exit 1
+    fi
     echo "服务已停止"
 else
     echo "未检测到运行中的服务（PID 文件与端口 $PORT 均无记录）"
