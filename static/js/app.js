@@ -942,6 +942,8 @@ document.addEventListener('DOMContentLoaded', () => {
             if (e.target === cm) closeChartModal();
         });
     }
+    const statsBtn = $('#import-stats-btn');
+    if (statsBtn) statsBtn.addEventListener('click', showImportStatsTable);
 });
 
 function getFreezeCols(mapping) {
@@ -3806,6 +3808,222 @@ async function loadHistory() {
         div.addEventListener('dblclick', () => showImportDetail(item.id));
         el.appendChild(div);
     });
+}
+
+// ---------------------------------------------------------------------------
+// 导入历史统计：所有导入记录汇总成一张表，数值列可画跨月折线图，
+// 变化单元格可点击展开与上一月的对比明细
+// ---------------------------------------------------------------------------
+const STATS_METRICS = [
+    { key: 'persons', label: '总人数', money: false },
+    { key: 'gross_sum', label: '应发工资合计', money: true },
+    { key: 'deduction_sum', label: '代扣合计', money: true },
+    { key: 'net_sum', label: '实发工资合计', money: true },
+    { key: 'post_salary_sum', label: '岗位工资合计', money: true },
+];
+let _statsRowsCache = null;
+
+async function showImportStatsTable() {
+    const body = $('#modal-body');
+    body.innerHTML = '<p>加载中...</p>';
+    $('#modal').classList.remove('import-detail-modal');
+    show($('#modal'));
+    let data;
+    try {
+        data = await fetch('/api/import-stats-table').then(r => r.json());
+    } catch (e) { infoModal('加载统计失败：' + e.message); return; }
+    const rows = data.rows || [];
+    if (!rows.length) { body.innerHTML = '<p class="empty-tip">暂无导入记录可统计。</p>'; return; }
+    _statsRowsCache = rows;
+
+    const fmtCell = (row, m) => m.money ? fmtMoney(row[m.key]) : row[m.key];
+    const changeCell = (row, type) => {
+        if (!row.prev_label) {
+            return `<td class="stats-change-cell" title="没有更早的导入记录可对比"><span style="color:var(--muted)">—</span></td>`;
+        }
+        const list = row.changes[type] || [];
+        if (!list.length) {
+            return `<td class="stats-change-cell" data-change="${type}"><span style="color:var(--muted)">0</span></td>`;
+        }
+        return `<td class="stats-change-cell" data-change="${type}"><strong>${list.length}</strong></td>`;
+    };
+
+    body.innerHTML = `
+        <h2>导入历史统计</h2>
+        <div class="table-wrap">
+            <table class="search-results-table stats-table">
+                <thead><tr>
+                    <th>年月</th>
+                    ${STATS_METRICS.map(m => `<th class="stats-num-th" data-metric="${m.key}" title="点击查看${m.label}跨月趋势折线图">${m.label}<button class="chart-btn" type="button" data-metric="${m.key}" data-label="${m.label}">📈</button></th>`).join('')}
+                    <th>邮箱空白</th>
+                    <th>人员变更</th>
+                    <th>岗位工资变更</th>
+                    <th>邮箱变更</th>
+                    <th>账号变更</th>
+                </tr></thead>
+                <tbody>
+                    ${rows.map(row => `
+                        <tr data-import-id="${row.import_id}">
+                            <td><strong>${row.year}年${row.month}月</strong><div class="stats-prev-tip">${escapeHtml(row.prev_label || '') || '—'}</div></td>
+                            ${STATS_METRICS.map(m => `<td class="stats-num-td">${fmtCell(row, m)}</td>`).join('')}
+                            <td style="color:${row.email_missing ? 'var(--warning)' : 'var(--muted)'}">${row.email_missing}</td>
+                            ${row.prev_label
+                                ? `<td class="stats-change-cell" data-change="added"><span style="color:#16a34a">+${row.changes.added.length}</span> <span style="color:#dc2626">-${row.changes.removed.length}</span></td>`
+                                : `<td class="stats-change-cell" title="没有更早的导入记录可对比"><span style="color:var(--muted)">—</span></td>`}
+                            ${changeCell(row, 'post_salary')}
+                            ${changeCell(row, 'email')}
+                            ${changeCell(row, 'account')}
+                        </tr>`).join('')}
+                </tbody>
+            </table>
+        </div>
+        <p style="font-size:12px;color:var(--muted);margin-top:8px;">提示：点击 📈 查看数值列跨月趋势折线图；点击「变更」类单元格查看与上一月的对比明细。</p>
+        <div id="import-stats-detail"></div>
+    `;
+
+    body.querySelectorAll('.chart-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            showImportTrendChart(btn.dataset.metric, btn.dataset.label);
+        });
+    });
+    body.querySelectorAll('.stats-change-cell').forEach(cell => {
+        cell.addEventListener('click', () => {
+            const tr = cell.closest('tr');
+            const row = _statsRowsCache.find(r => r.import_id === Number(tr.dataset.importId));
+            if (!row) return;
+            const type = cell.dataset.change;
+            const wasActive = cell.classList.contains('active');
+            body.querySelectorAll('.stats-change-cell').forEach(c => c.classList.remove('active'));
+            const box = body.querySelector('#import-stats-detail');
+            if (wasActive) { box.innerHTML = ''; return; }
+            cell.classList.add('active');
+            const monthLabel = `${row.year}年${row.month}月`;
+            box.innerHTML = renderStatsChangeDetail(type, row.changes[type], `${monthLabel} · `);
+            box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
+    });
+}
+
+function renderStatsChangeDetail(type, list, prefix = '') {
+    const titleMap = {
+        added: '新增人员名单', removed: '减少人员名单',
+        post_salary: '岗位工资变更明细', email: '邮箱信息变更明细', account: '银行账号变更明细',
+    };
+    if (!list || !list.length) return `<h3>${prefix}${titleMap[type]}：无变化</h3>`;
+    let head, rows;
+    if (type === 'added' || type === 'removed') {
+        head = '<th>社区</th><th>姓名</th>';
+        rows = list.map(x => `<tr><td>${escapeHtml(x.community)}</td><td>${escapeHtml(x.name)}</td></tr>`).join('');
+    } else if (type === 'post_salary') {
+        head = '<th>社区</th><th>姓名</th><th>上月</th><th>本月</th><th>相差</th>';
+        rows = list.map(x => {
+            const color = x.diff > 0 ? 'var(--success)' : 'var(--danger)';
+            const sign = x.diff > 0 ? '+' : '';
+            return `<tr><td>${escapeHtml(x.community)}</td><td>${escapeHtml(x.name)}</td><td>${x.prev == null ? '—' : fmtMoney(x.prev)}</td><td>${x.cur == null ? '—' : fmtMoney(x.cur)}</td><td style="color:${color}">${sign}${fmtMoney(x.diff)}</td></tr>`;
+        }).join('');
+    } else {
+        head = '<th>社区</th><th>姓名</th><th>上月</th><th>本月</th>';
+        rows = list.map(x => `<tr><td>${escapeHtml(x.community)}</td><td>${escapeHtml(x.name)}</td><td>${escapeHtml(x.prev || '') || '—'}</td><td>${escapeHtml(x.cur || '') || '—'}</td></tr>`).join('');
+    }
+    return `<h3>${prefix}${titleMap[type]}（${list.length} 条）</h3>
+        <div class="table-wrap"><table class="search-results-table"><thead><tr>${head}</tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function showImportTrendChart(metric, label) {
+    const rows = _statsRowsCache || [];
+    if (rows.length < 2) { infoModal('至少需要 2 个月的导入记录才能查看趋势图。'); return; }
+
+    const rawPoints = rows.map(row => ({
+        xLabel: `${row.year}-${String(row.month).padStart(2, '0')}`,
+        value: Number(row[metric]) || 0,
+    }));
+    const values = rawPoints.map(p => p.value);
+    const sorted = [...values].sort((a, b) => a - b);
+    const min = sorted[0];
+    const max = sorted[sorted.length - 1];
+    const sum = values.reduce((a, b) => a + b, 0);
+    const avg = sum / values.length;
+    const median = sorted.length % 2 === 1
+        ? sorted[(sorted.length - 1) / 2]
+        : (sorted[sorted.length / 2 - 1] + sorted[sorted.length / 2]) / 2;
+    const variance = values.reduce((acc, v) => acc + Math.pow(v - avg, 2), 0) / values.length;
+    const stdDev = Math.sqrt(variance);
+    const minIdx = values.indexOf(min);
+    const maxIdx = values.indexOf(max);
+
+    const body = $('#chart-modal-body');
+    if (_chartInstance) { _chartInstance.destroy(); _chartInstance = null; }
+    body.innerHTML = `
+        <h2>导入趋势 · ${escapeHtml(label)}</h2>
+        <div class="chart-stats">
+            <div class="stat-card"><div class="stat-label">最小值</div><div class="stat-value" style="color:#dc2626">${fmtMoney(min)}</div></div>
+            <div class="stat-card"><div class="stat-label">最大值</div><div class="stat-value" style="color:#16a34a">${fmtMoney(max)}</div></div>
+            <div class="stat-card"><div class="stat-label">中位数</div><div class="stat-value">${fmtMoney(median)}</div></div>
+            <div class="stat-card"><div class="stat-label">平均值</div><div class="stat-value">${fmtMoney(avg)}</div></div>
+            <div class="stat-card"><div class="stat-label">求和</div><div class="stat-value">${fmtMoney(sum)}</div></div>
+            <div class="stat-card"><div class="stat-label">标准差</div><div class="stat-value">${fmtMoney(stdDev)}</div></div>
+        </div>
+        <div class="chart-container"><canvas id="col-chart"></canvas></div>
+    `;
+    show($('#chart-modal'));
+
+    const canvas = document.getElementById('col-chart');
+    if (canvas && window.Chart) {
+        const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+        const gridColor = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+        const tickColor = isDark ? '#cbd5e1' : '#334155';
+        const lineColor = '#3b82f6';
+        const pointColors = rawPoints.map((_, i) => i === minIdx ? '#dc2626' : i === maxIdx ? '#16a34a' : lineColor);
+        const pointRadii = rawPoints.map((_, i) => (i === minIdx || i === maxIdx) ? 6 : 4);
+        _chartInstance = new Chart(canvas, {
+            type: 'line',
+            data: {
+                labels: rawPoints.map(p => p.xLabel),
+                datasets: [{
+                    label: label,
+                    data: values,
+                    borderColor: lineColor,
+                    borderWidth: 2.5,
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    fill: true,
+                    tension: 0.2,
+                    pointBackgroundColor: pointColors,
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 1.5,
+                    pointRadius: pointRadii,
+                    pointHoverRadius: 8,
+                }, {
+                    label: '平均值',
+                    data: rawPoints.map(() => avg),
+                    borderColor: '#f59e0b',
+                    borderWidth: 1.5,
+                    borderDash: [6, 4],
+                    pointRadius: 0,
+                    fill: false,
+                    tension: 0,
+                }, {
+                    label: '中位数',
+                    data: rawPoints.map(() => median),
+                    borderColor: '#8b5cf6',
+                    borderWidth: 1.5,
+                    borderDash: [4, 4],
+                    pointRadius: 0,
+                    fill: false,
+                    tension: 0,
+                }],
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { labels: { color: tickColor } } },
+                scales: {
+                    x: { title: { display: true, text: '导入年月', color: tickColor }, ticks: { color: tickColor }, grid: { color: gridColor } },
+                    y: { title: { display: true, text: label, color: tickColor }, ticks: { color: tickColor }, grid: { color: gridColor } },
+                },
+            },
+        });
+    }
 }
 
 async function handleImportSend(importId, year, month) {

@@ -1806,6 +1806,106 @@ def api_imports():
     return jsonify(result)
 
 
+def _stat_to_float(v):
+    """把明细里的字符串数值安全转为 float。"""
+    if v is None or v == "":
+        return None
+    try:
+        return float(str(v).replace(",", "").replace("，", ""))
+    except (TypeError, ValueError):
+        return None
+
+
+def _load_import_person_map(conn, import_id):
+    """加载某次导入的全部人员，返回 {(社区, 姓名): 字段dict}。"""
+    rows = conn.execute("""
+        SELECT p.community, p.name, p.email, p.email_status,
+               sr.data_json, sr.gross_salary, sr.total_deduction, sr.net_salary, sr.bank_account
+        FROM persons p
+        LEFT JOIN salary_records sr ON sr.person_id = p.id
+        WHERE p.import_id = ?
+    """, (import_id,)).fetchall()
+    m = {}
+    for r in rows:
+        detail = json.loads(r["data_json"]) if r["data_json"] else {}
+        m[(r["community"], r["name"])] = {
+            "email": (r["email"] or "").strip(),
+            "email_status": r["email_status"],
+            "post_salary": _stat_to_float(detail.get("岗位工资")),
+            "gross": _stat_to_float(r["gross_salary"]),
+            "deduction": _stat_to_float(r["total_deduction"]),
+            "net": _stat_to_float(r["net_salary"]),
+            "bank_account": (r["bank_account"] or "").strip(),
+        }
+    return m
+
+
+def _summarize_import_map(m):
+    return {
+        "persons": len(m),
+        "gross_sum": round(sum(v["gross"] or 0 for v in m.values()), 2),
+        "deduction_sum": round(sum(v["deduction"] or 0 for v in m.values()), 2),
+        "net_sum": round(sum(v["net"] or 0 for v in m.values()), 2),
+        "post_salary_sum": round(sum(v["post_salary"] or 0 for v in m.values()), 2),
+        "email_missing": sum(1 for v in m.values() if not v["email"]),
+    }
+
+
+def _compare_import_maps(cur_map, prev_map):
+    """对比两次导入的人员变化：新增/减少名单与岗位工资/邮箱/银行账号变更明细。"""
+    if prev_map is None:
+        return {"added": [], "removed": [], "post_salary": [], "email": [], "account": []}
+    added = [{"community": c, "name": n} for (c, n) in cur_map if (c, n) not in prev_map]
+    removed = [{"community": c, "name": n} for (c, n) in prev_map if (c, n) not in cur_map]
+
+    post_changed, email_changed, account_changed = [], [], []
+    for key, c in cur_map.items():
+        p = prev_map.get(key)
+        if not p:
+            continue
+        if c["post_salary"] != p["post_salary"] and (c["post_salary"] is not None or p["post_salary"] is not None):
+            post_changed.append({
+                "community": key[0], "name": key[1],
+                "prev": p["post_salary"], "cur": c["post_salary"],
+                "diff": round((c["post_salary"] or 0) - (p["post_salary"] or 0), 2),
+            })
+        if c["email"] != p["email"]:
+            email_changed.append({"community": key[0], "name": key[1], "prev": p["email"], "cur": c["email"]})
+        if c["bank_account"] != p["bank_account"]:
+            account_changed.append({"community": key[0], "name": key[1], "prev": p["bank_account"], "cur": c["bank_account"]})
+
+    return {
+        "added": sorted(added, key=lambda x: (x["community"], x["name"])),
+        "removed": sorted(removed, key=lambda x: (x["community"], x["name"])),
+        "post_salary": sorted(post_changed, key=lambda x: (x["community"], x["name"])),
+        "email": sorted(email_changed, key=lambda x: (x["community"], x["name"])),
+        "account": sorted(account_changed, key=lambda x: (x["community"], x["name"])),
+    }
+
+
+@app.route("/api/import-stats-table", methods=["GET"])
+def api_import_stats_table():
+    """汇总所有导入记录为统计表：每月一行，含汇总值与相对上一次导入的变化明细。"""
+    with get_db() as conn:
+        imports = conn.execute("SELECT id, year, month FROM salary_imports ORDER BY year ASC, month ASC").fetchall()
+        rows = []
+        prev_map = None
+        prev_label = None
+        for imp in imports:
+            cur_map = _load_import_person_map(conn, imp["id"])
+            rows.append({
+                "import_id": imp["id"],
+                "year": imp["year"],
+                "month": imp["month"],
+                "prev_label": prev_label,
+                **_summarize_import_map(cur_map),
+                "changes": _compare_import_maps(cur_map, prev_map),
+            })
+            prev_map = cur_map
+            prev_label = f"{imp['year']}年{imp['month']}月"
+    return jsonify({"rows": rows})
+
+
 @app.route("/api/check-senders", methods=["GET"])
 def api_check_senders():
     """检查是否有已启用的发件人邮箱。"""

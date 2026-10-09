@@ -1032,6 +1032,38 @@ th.has-chart-btn {
 
 html[data-theme="dark"] .stat-card { background: #1e293b; border-color: #334155; }
 html[data-theme="dark"] .stat-value { color: #e2e8f0; }
+
+/* 导入历史统计：工具栏 + 汇总表 */
+.history-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+.history-toolbar-tip {
+    font-size: 12px;
+    color: var(--muted);
+}
+.stats-table th.stats-num-th {
+    white-space: nowrap;
+}
+.chart-btn {
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 13px;
+    padding: 0 2px;
+    margin-left: 4px;
+    vertical-align: middle;
+}
+.chart-btn:hover { transform: scale(1.15); }
+.stats-table td.stats-num-td { text-align: right; white-space: nowrap; }
+.stats-change-cell { cursor: pointer; text-align: center; white-space: nowrap; }
+.stats-change-cell:hover { background: var(--bg); }
+.stats-change-cell.active { background: var(--bg); box-shadow: inset 0 0 0 2px var(--primary); }
+.stats-prev-tip { font-size: 11px; color: var(--muted); margin-top: 2px; }
+html[data-theme="dark"] .stats-change-cell:hover { background: #334155; }
+#import-stats-detail h3 { margin: 18px 0 8px; font-size: 15px; }
 .import-detail-wrap {
     overflow: auto;
     max-height: 70vh;
