@@ -3324,6 +3324,8 @@ def api_package_project():
                 # Windows 下生成的 zip 不带 Unix 执行位，显式给 shell 脚本加 +x，
                 # 否则在银河麒麟等 Linux 上解压后无法直接 ./start.sh 运行
                 info.external_attr = (0o755 if path.suffix == ".sh" else 0o644) << 16
+                # 标记条目为 Unix 来源，否则 Linux 解压时按 FAT 属性忽略权限位
+                info.create_system = 3
                 zf.writestr(info, path.read_bytes())
 
         # 打开 packages 目录
