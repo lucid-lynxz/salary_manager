@@ -1077,9 +1077,10 @@ html[data-theme="dark"] .stat-value { color: #e2e8f0; }
 html[data-theme="dark"] .search-results-table.stats-table td.freeze-1 { background: #1e293b; }
 html[data-theme="dark"] .search-results-table.stats-table thead th.freeze-1 { background: #334155; }
 .stats-table td.stats-month-cell { white-space: nowrap; }
-.stats-change-cell { cursor: pointer; text-align: center; white-space: nowrap; }
+.stats-table td.stats-change-cell { cursor: pointer; text-align: center; white-space: nowrap; }
+.stats-table td.stats-missing-cell { text-align: center; }
 .stats-change-cell[data-change]:hover { background: var(--bg); }
-.stats-change-cell:not([data-change]) { cursor: default; }
+.stats-table td.stats-change-cell:not([data-change]) { cursor: default; }
 .stats-prev-tip { font-size: 11px; color: var(--muted); margin-top: 2px; }
 html[data-theme="dark"] .stats-change-cell[data-change]:hover { background: #334155; }
 .stats-detail-filter { display: flex; align-items: center; gap: 12px; margin: 12px 0; }

@@ -3852,9 +3852,19 @@ async function showImportStatsTable() {
         }
         const list = row.changes[type] || [];
         if (!list.length) {
-            return `<td class="stats-change-cell" data-change="${type}"><span style="color:var(--muted)">0</span></td>`;
+            return `<td class="stats-change-cell"><span style="color:var(--muted)">0</span></td>`;
         }
         return `<td class="stats-change-cell" data-change="${type}"><strong>${list.length}</strong></td>`;
+    };
+    const personChangeCell = (row) => {
+        if (!row.prev_label) {
+            return `<td class="stats-change-cell" title="没有更早的导入记录可对比"><span style="color:var(--muted)">—</span></td>`;
+        }
+        const a = row.changes.added.length, r = row.changes.removed.length;
+        const inner = `<span style="color:#16a34a">+${a}</span> <span style="color:#dc2626">-${r}</span>`;
+        return (a + r)
+            ? `<td class="stats-change-cell" data-change="added">${inner}</td>`
+            : `<td class="stats-change-cell">${inner}</td>`;
     };
 
     body.innerHTML = `
@@ -3875,10 +3885,8 @@ async function showImportStatsTable() {
                         <tr data-import-id="${row.import_id}">
                             <td class="stats-month-cell freeze-1">${row.year}年${row.month}月${i < viewRows.length - 1 ? '' : '<div class="stats-prev-tip">无上月可对比</div>'}</td>
                             ${STATS_METRICS.map(m => `<td class="stats-num-td">${fmtCell(row, m)}</td>`).join('')}
-                            <td style="color:${row.email_missing ? 'var(--warning)' : 'var(--muted)'}">${row.email_missing}</td>
-                            ${row.prev_label
-                                ? `<td class="stats-change-cell" data-change="added"><span style="color:#16a34a">+${row.changes.added.length}</span> <span style="color:#dc2626">-${row.changes.removed.length}</span></td>`
-                                : `<td class="stats-change-cell" title="没有更早的导入记录可对比"><span style="color:var(--muted)">—</span></td>`}
+                            <td class="stats-missing-cell" style="color:${row.email_missing ? 'var(--warning)' : 'var(--muted)'}">${row.email_missing}</td>
+                            ${personChangeCell(row)}
                             ${changeCell(row, 'post_salary')}
                             ${changeCell(row, 'email')}
                             ${changeCell(row, 'account')}
@@ -3886,7 +3894,7 @@ async function showImportStatsTable() {
                 </tbody>
             </table>
         </div>
-        <p style="font-size:12px;color:var(--muted);margin-top:8px;">提示：按年月倒序排列，各「变更」列即与下一行（上月）对比；点击 📈 查看数值列跨月趋势折线图，点击「变更」单元格弹窗查看对比明细。</p>
+        <p style="font-size:12px;color:var(--muted);margin-top:8px;">提示：按年月倒序排列，各「变更」列即与下一行（上月）对比；点击 📈 查看数值列跨月趋势折线图，点击非零「变更」单元格弹窗查看对比明细。</p>
     `;
 
     body.querySelectorAll('.chart-btn').forEach(btn => {
