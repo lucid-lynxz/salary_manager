@@ -5065,7 +5065,11 @@ async function loadSenders() {
         const data = await res.json();
         
         const container = $('#senders-list');
-        if (!data.senders || data.senders.length === 0) {
+        const senders = data.senders || [];
+        const enabledCount = senders.filter(s => s.is_enabled).length;
+        const summary = $('#senders-summary');
+        if (summary) summary.textContent = senders.length ? `共 ${senders.length} 个发件人 · 启用 ${enabledCount} 个` : '暂无发件人';
+        if (!senders.length) {
             container.innerHTML = '<p class="empty-text">暂无发件人，请点击右上角添加</p>';
             return;
         }

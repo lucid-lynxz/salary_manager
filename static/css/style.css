@@ -1548,6 +1548,7 @@ html[data-theme="dark"] .flatpickr-day.today { border-color: var(--primary); }
     margin: 0;
     font-size: 1.5rem;
 }
+.senders-summary { font-size: 13px; color: var(--muted); }
 
 .senders-list {
     min-height: 200px;
