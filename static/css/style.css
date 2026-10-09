@@ -1073,7 +1073,7 @@ html[data-theme="dark"] .stat-value { color: #e2e8f0; }
 .search-results-table.stats-table td + td { border-left-width: 0; }
 .search-results-table.stats-table tbody td { border-top-width: 0; }
 .search-results-table.stats-table td.freeze-1 { background: #fff; }
-.search-results-table.stats-table thead th.freeze-1 { background: var(--bg); }
+.search-results-table.stats-table thead th.freeze-1 { background: var(--bg); z-index: 12; }
 html[data-theme="dark"] .search-results-table.stats-table td.freeze-1 { background: #1e293b; }
 html[data-theme="dark"] .search-results-table.stats-table thead th.freeze-1 { background: #334155; }
 .stats-table td.stats-month-cell { white-space: nowrap; }

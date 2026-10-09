@@ -4009,7 +4009,7 @@ function showImportTrendChart(metric, label) {
     const body = $('#chart-modal-body');
     if (_chartInstance) { _chartInstance.destroy(); _chartInstance = null; }
     body.innerHTML = `
-        <h2>导入趋势 · ${escapeHtml(label)}</h2>
+        <h2>${escapeHtml(label)}</h2>
         <div class="chart-stats">
             <div class="stat-card"><div class="stat-label">最小值</div><div class="stat-value" style="color:#dc2626">${fmt(min)}</div></div>
             <div class="stat-card"><div class="stat-label">最大值</div><div class="stat-value" style="color:#16a34a">${fmt(max)}</div></div>
@@ -4094,7 +4094,7 @@ function showImportTrendChart(metric, label) {
                     },
                 },
                 scales: {
-                    x: { title: { display: true, text: '导入年月', color: tickColor }, ticks: { color: tickColor }, grid: { color: gridColor } },
+                    x: { title: { display: true, text: '年月份', color: tickColor }, ticks: { color: tickColor }, grid: { color: gridColor } },
                     y: {
                         title: { display: true, text: label, color: tickColor },
                         ticks: { color: tickColor, precision: 0, callback: v => fmt(Number(v)) },
