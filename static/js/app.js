@@ -3641,8 +3641,8 @@ async function showPersonDetail(id, year, month) {
         table.parentNode.insertBefore(wrapper, table);
         wrapper.appendChild(table);
 
-        // 历史记录 >=3 条时，给数值列加图表按钮（折线图看时间趋势才有意义）
-        if (window.Chart && history.length >= 3) {
+        // 历史记录 >=2 条时，给数值列加图表按钮（两个点即可看出环比趋势）
+        if (window.Chart && history.length >= 2) {
             // history 后端返回是倒序（最新在前），图表需要正序
             const timeAscHistory = [...history].sort((a, b) =>
                 (a.year * 12 + a.month) - (b.year * 12 + b.month)
