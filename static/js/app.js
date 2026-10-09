@@ -3835,6 +3835,8 @@ async function showImportStatsTable() {
     const rows = data.rows || [];
     if (!rows.length) { body.innerHTML = '<p class="empty-tip">暂无导入记录可统计。</p>'; return; }
     _statsRowsCache = rows;
+    // 表格按月倒序展示：每行与下一行（上月）对比；折线图仍用升序
+    const viewRows = [...rows].reverse();
 
     const fmtCell = (row, m) => m.money ? fmtMoney(row[m.key]) : row[m.key];
     const changeCell = (row, type) => {
@@ -3862,9 +3864,9 @@ async function showImportStatsTable() {
                     <th>账号变更</th>
                 </tr></thead>
                 <tbody>
-                    ${rows.map(row => `
+                    ${viewRows.map((row, i) => `
                         <tr data-import-id="${row.import_id}">
-                            <td><strong>${row.year}年${row.month}月</strong><div class="stats-prev-tip">${row.prev_label ? '对比: ' + escapeHtml(row.prev_label) : '无上月可对比'}</div></td>
+                            <td><strong>${row.year}年${row.month}月</strong>${i < viewRows.length - 1 ? '' : '<div class="stats-prev-tip">无上月可对比</div>'}</td>
                             ${STATS_METRICS.map(m => `<td class="stats-num-td">${fmtCell(row, m)}</td>`).join('')}
                             <td style="color:${row.email_missing ? 'var(--warning)' : 'var(--muted)'}">${row.email_missing}</td>
                             ${row.prev_label
@@ -3877,7 +3879,7 @@ async function showImportStatsTable() {
                 </tbody>
             </table>
         </div>
-        <p style="font-size:12px;color:var(--muted);margin-top:8px;">提示：点击 📈 查看数值列跨月趋势折线图；点击「变更」类单元格查看与上一月的对比明细。</p>
+        <p style="font-size:12px;color:var(--muted);margin-top:8px;">提示：按年月倒序排列，各「变更」列即与下一行（上月）对比；点击 📈 查看数值列跨月趋势折线图，点击「变更」单元格查看对比明细。</p>
         <div id="import-stats-detail"></div>
     `;
 
@@ -3887,7 +3889,7 @@ async function showImportStatsTable() {
             showImportTrendChart(btn.dataset.metric, btn.dataset.label);
         });
     });
-    body.querySelectorAll('.stats-change-cell').forEach(cell => {
+    body.querySelectorAll('.stats-change-cell[data-change]').forEach(cell => {
         cell.addEventListener('click', () => {
             const tr = cell.closest('tr');
             const row = _statsRowsCache.find(r => r.import_id === Number(tr.dataset.importId));
@@ -3898,8 +3900,8 @@ async function showImportStatsTable() {
             const box = body.querySelector('#import-stats-detail');
             if (wasActive) { box.innerHTML = ''; return; }
             cell.classList.add('active');
-            const monthLabel = `${row.year}年${row.month}月`;
-            box.innerHTML = renderStatsChangeDetail(type, row.changes[type], `${monthLabel} · `);
+            const cmp = row.prev_label ? `${row.year}年${row.month}月 对比 ${row.prev_label}` : `${row.year}年${row.month}月`;
+            box.innerHTML = renderStatsChangeDetail(type, row.changes[type], `${cmp} · `);
             box.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
         });
     });

@@ -1067,10 +1067,11 @@ html[data-theme="dark"] .stat-value { color: #e2e8f0; }
 .chart-btn:hover { transform: scale(1.15); }
 .stats-table td.stats-num-td { text-align: right; white-space: nowrap; }
 .stats-change-cell { cursor: pointer; text-align: center; white-space: nowrap; }
-.stats-change-cell:hover { background: var(--bg); }
+.stats-change-cell[data-change]:hover { background: var(--bg); }
+.stats-change-cell:not([data-change]) { cursor: default; }
 .stats-change-cell.active { background: var(--bg); box-shadow: inset 0 0 0 2px var(--primary); }
 .stats-prev-tip { font-size: 11px; color: var(--muted); margin-top: 2px; }
-html[data-theme="dark"] .stats-change-cell:hover { background: #334155; }
+html[data-theme="dark"] .stats-change-cell[data-change]:hover { background: #334155; }
 #import-stats-detail h3 { margin: 18px 0 8px; font-size: 15px; }
 .import-detail-wrap {
     overflow: auto;
