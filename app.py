@@ -10,6 +10,7 @@ import zipfile
 import sys
 import time
 import html
+import threading
 from pathlib import Path
 from functools import wraps
 
@@ -3338,18 +3339,29 @@ def api_package_project():
 
 @app.route("/api/stop-service", methods=["POST"])
 def api_stop_service():
-    """调用 stop.sh 停止服务。"""
-    try:
-        subprocess.Popen(
-            ["bash", str(BASE_DIR / "stop.sh")],
-            cwd=BASE_DIR,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True,
-        )
-        return jsonify({"message": "服务正在停止，请稍后刷新页面"})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+    """停止服务：Windows 直接结束自身进程树，Unix 走 stop.sh 按端口停止。"""
+    def _kill_soon():
+        time.sleep(0.5)  # 留时间把响应发回浏览器
+        try:
+            if os.name == "nt":
+                # start_new_session 在 Windows 上会直接 ValueError，旧实现因此点了没反应
+                subprocess.run(
+                    ["taskkill", "/F", "/T", "/PID", str(os.getpid())],
+                    capture_output=True,
+                )
+            else:
+                subprocess.Popen(
+                    ["bash", str(BASE_DIR / "stop.sh")],
+                    cwd=BASE_DIR,
+                    start_new_session=True,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+        except Exception:
+            pass
+
+    threading.Thread(target=_kill_soon, daemon=True).start()
+    return jsonify({"message": "服务正在停止，请稍后刷新页面"})
 
 
 # ---------------------------------------------------------------------------
