@@ -115,6 +115,8 @@ cd /path/to/salary_manager
 
 > **Windows 注意**：请在 Git Bash 中执行 `./start.sh`。若 `code` 命令在 Git Bash 下报错（路径被 Anaconda 环境篡改），改用 PowerShell 或直接从 VS Code 打开文件即可。
 
+> **Linux / 银河麒麟注意**：双击 `.sh` 文件在多数 Linux 桌面（含银河麒麟）不会打开终端运行，需在文件管理器「属性 → 权限」勾选可执行，或在终端里执行 `bash start.sh`。脚本会输出环境检测信息：缺少 `python3` / `python3-venv` 时给出对应发行版的安装命令（麒麟/UOS/Deepin 用 `sudo apt install python3 python3-venv python3-pip`）；系统未装 `lsof` 时自动退回 `ss` 检测端口。新版「打包项目」生成的 zip 已为 `start.sh` / `stop.sh` 保留可执行权限（0o755），解压后可直接运行。
+
 启动成功后会自动打开默认浏览器，并输出访问地址：
 
 ```

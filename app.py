@@ -8,6 +8,7 @@ import platform
 import subprocess
 import zipfile
 import sys
+import time
 import html
 from pathlib import Path
 from functools import wraps
@@ -3317,7 +3318,13 @@ def api_package_project():
                     continue
                 if any(pattern in name for pattern in exclude_name_patterns):
                     continue
-                zf.write(path, path.relative_to(BASE_DIR))
+                arcname = path.relative_to(BASE_DIR).as_posix()
+                info = zipfile.ZipInfo(arcname, date_time=time.localtime(path.stat().st_mtime)[:6])
+                info.compress_type = zipfile.ZIP_DEFLATED
+                # Windows 下生成的 zip 不带 Unix 执行位，显式给 shell 脚本加 +x，
+                # 否则在银河麒麟等 Linux 上解压后无法直接 ./start.sh 运行
+                info.external_attr = (0o755 if path.suffix == ".sh" else 0o644) << 16
+                zf.writestr(info, path.read_bytes())
 
         # 打开 packages 目录
         _open_dir(packages_dir)
