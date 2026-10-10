@@ -22,6 +22,83 @@ from cryptography.fernet import Fernet
 
 app = Flask(__name__)
 
+# ============================================================
+# 强制脱敏保护：所有可能输出到日志/错误的敏感数据会被掩盖
+# ============================================================
+def _mask_name(s: str) -> str:
+    """脱敏姓名：张三→张*, 张三丰→张**, 欧阳锋→欧**"""
+    if not s or not isinstance(s, str): return "***"
+    s = s.strip()
+    if len(s) <= 1: return s  # 单字不脱敏（无法判断）
+    if len(s) == 2: return s[0] + "*"
+    # 复姓或普通：保留首字，其余替换为 *
+    return s[0] + "*" * (len(s) - 1)
+
+def _mask_email(s: str) -> str:
+    """脱敏邮箱：zhangsan@qq.com → z***@qq.com"""
+    if not s or not isinstance(s, str) or "@" not in s: return "***@***"
+    s = s.strip()
+    local, domain = s.split("@", 1)
+    if not local: return f"***@{domain}"
+    masked_local = local[0] + "*" * max(1, len(local) - 1)
+    return f"{masked_local}@{domain}"
+
+def _mask_bank_card(s: str) -> str:
+    """脱敏银行卡：6222021234567890123 → 6222********0123"""
+    if not s: return "********"
+    s = re.sub(r"\D", "", str(s))  # 去掉非数字
+    if len(s) < 8: return "*" * len(s)
+    return s[:4] + "*" * (len(s) - 8) + s[-4:]
+
+def _mask_id_card(s: str) -> str:
+    """脱敏身份证：310101199001011234 → 310101********1234"""
+    if not s: return "********"
+    s = re.sub(r"[^\dXx]", "", str(s))
+    if len(s) < 8: return "*" * len(s)
+    return s[:6] + "*" * (len(s) - 10) + s[-4:]
+
+def _mask_phone(s: str) -> str:
+    """脱敏手机号：13812345678 → 138****5678"""
+    if not s: return "********"
+    s = re.sub(r"\D", "", str(s))
+    if len(s) < 7: return "*" * len(s)
+    return s[:3] + "*" * 4 + s[-4:]
+
+# 常见敏感数据的正则模式 + 替换函数（只匹配可唯一识别的敏感标识）
+_SENSITIVE_PATTERNS = [
+    (re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b"), _mask_email),  # 邮箱（唯一标识）
+    (re.compile(r"\b\d{15,20}\b"), _mask_bank_card),             # 银行卡（唯一标识）
+    (re.compile(r"\b\d{17}[\dXx]\b"), _mask_id_card),            # 身份证18位（唯一标识）
+    (re.compile(r"\b1[3-9]\d{9}\b"), _mask_phone),               # 手机号（唯一标识）
+    # 中文姓名**不自动脱敏**（2-4字中文过度匹配），如需脱敏在业务代码里显式调用 _mask_name
+]
+
+def mask_sensitive(text: str) -> str:
+    """把任意文本里的敏感数据全部脱敏，返回脱敏后的文本。"""
+    if not text or not isinstance(text, str):
+        return text
+    result = text
+    # 身份证在手机号之前，避免先匹配成手机号
+    for pattern, mask_fn in _SENSITIVE_PATTERNS:
+        result = pattern.sub(lambda m: mask_fn(m.group(0)), result)
+    return result
+
+def safe_traceback() -> str:
+    """获取脱敏后的 traceback，确保敏感数据不会泄露。"""
+    import traceback as _tb
+    raw = _tb.format_exc()
+    return mask_sensitive(raw)
+
+def log_error(endpoint: str, detail: str):
+    """统一打印错误日志（已脱敏）。"""
+    safe_detail = mask_sensitive(detail)
+    print(f"[{endpoint}] ERROR (REDACTED): {safe_detail}", file=sys.stderr, flush=True)
+
+# 覆盖标准库 traceback.format_exc，确保任何地方用 traceback 都会自动脱敏
+import traceback as _tb
+_original_format_exc = _tb.format_exc
+_tb.format_exc = lambda *args, **kwargs: mask_sensitive(_original_format_exc(*args, **kwargs))
+
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "uploads"
 DB_PATH = BASE_DIR / "salary.db"
@@ -2324,8 +2401,7 @@ def api_write_back_salary():
     
     except Exception as e:
         import traceback
-        error_detail = traceback.format_exc()
-        print(f"[WRITE-BACK] ERROR: {error_detail}", file=sys.stderr, flush=True)
+        log_error("WRITE-BACK", traceback.format_exc())
         return jsonify({"error": f"写回失败: {str(e)}"}), 500
 
 
@@ -2437,8 +2513,7 @@ def api_write_back_email():
     
     except Exception as e:
         import traceback
-        error_detail = traceback.format_exc()
-        print(f"[WRITE-BACK-EMAIL] ERROR: {error_detail}", file=sys.stderr, flush=True)
+        log_error("WRITE-BACK-EMAIL", traceback.format_exc())
         return jsonify({"error": f"写回失败: {str(e)}"}), 500
 
 
@@ -2570,9 +2645,7 @@ def api_export_import(import_id):
     
     except Exception as e:
         import traceback
-        import sys
-        error_detail = traceback.format_exc()
-        print(f"[EXPORT] ERROR: {error_detail}", file=sys.stderr, flush=True)
+        log_error("EXPORT", traceback.format_exc())
         return jsonify({"error": f"导出失败: {str(e)}"}), 500
 
 

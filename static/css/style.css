@@ -1118,29 +1118,18 @@ html[data-theme="dark"] .stats-detail-filter input { background: #1e293b; color:
     font-weight: 600;
 }
 .import-detail-table tbody tr:nth-child(even) td { background: #fafafa; }
-/* 冻结第 1 列（社区） */
-.import-detail-table th.freeze-1,
-.import-detail-table td.freeze-1 {
+/* 左侧连续冻结列：数量与位置由 JS 按物理列顺序渲染，left 偏移由 JS 累加实测宽度写入 */
+.import-detail-table th.freeze-col,
+.import-detail-table td.freeze-col {
     position: sticky;
-    left: 0;
     z-index: 2;
     background: #fff;
 }
-.import-detail-table thead th.freeze-1 { z-index: 5; background: #f3f4f6; }
-.import-detail-table tbody tr:nth-child(even) td.freeze-1 { background: #fafafa; }
-/* 冻结第 2 列（姓名） */
-.import-detail-table th.freeze-2,
-.import-detail-table td.freeze-2 {
-    position: sticky;
-    left: var(--freeze-1-width, 90px);
-    z-index: 2;
-    background: #fff;
-}
-.import-detail-table thead th.freeze-2 { z-index: 5; background: #f3f4f6; }
-.import-detail-table tbody tr:nth-child(even) td.freeze-2 { background: #fafafa; }
-/* 冻结列右侧分隔线，避免滚动时与数据列重叠模糊 */
-.import-detail-table td.freeze-2,
-.import-detail-table th.freeze-2 {
+.import-detail-table thead th.freeze-col { z-index: 5; background: #f3f4f6; }
+.import-detail-table tbody tr:nth-child(even) td.freeze-col { background: #fafafa; }
+/* 冻结区最右列（freeze-col-last）右侧分隔线，避免滚动时与数据列重叠模糊 */
+.import-detail-table td.freeze-col-last,
+.import-detail-table th.freeze-col-last {
     box-shadow: 2px 0 4px -2px rgba(0, 0, 0, 0.15);
 }
 
@@ -1457,11 +1446,9 @@ html[data-theme="dark"] .table-wrap thead th.freeze-col { background: #334155; }
 html[data-theme="dark"] .import-detail-table th,
 html[data-theme="dark"] .import-detail-table td { background: #1e293b; color: var(--text); border-color: #334155; }
 html[data-theme="dark"] .import-detail-table thead th,
-html[data-theme="dark"] .import-detail-table thead th.freeze-1,
-html[data-theme="dark"] .import-detail-table thead th.freeze-2 { background: #334155; border-color: #475569; }
+html[data-theme="dark"] .import-detail-table thead th.freeze-col { background: #334155; border-color: #475569; }
 html[data-theme="dark"] .import-detail-table tbody tr:nth-child(even) td,
-html[data-theme="dark"] .import-detail-table tbody tr:nth-child(even) td.freeze-1,
-html[data-theme="dark"] .import-detail-table tbody tr:nth-child(even) td.freeze-2 { background: #273449; }
+html[data-theme="dark"] .import-detail-table tbody tr:nth-child(even) td.freeze-col { background: #273449; }
 html[data-theme="dark"] .import-detail-table td.freeze-action,
 html[data-theme="dark"] .import-detail-table th.freeze-action { background: #1e293b; box-shadow: -2px 0 4px -2px rgba(0, 0, 0, 0.3); border-color: #334155; }
 html[data-theme="dark"] .import-detail-table thead th.freeze-action { background: #334155; border-color: #475569; }

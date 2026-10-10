@@ -4451,13 +4451,15 @@ async function showImportDetail(importId) {
         </div>` : '';
 
         // 列顺序完全跟工资表（detailCols）一致，最后加邮箱列
-        // 找出社区/姓名在 detailCols 中的索引用于冻结
+        // 冻结列以 社区/姓名 为锚点，但 sticky 冻结必须从最左列起连续（同 Excel），
+        // 否则横向滚动时未冻结列会从冻结列左侧缝隙滑出、且右列压左列造成错位重叠
         const communityIdx = detailCols.indexOf('社区');
         const nameIdx = detailCols.indexOf('姓名');
+        const anchorIdxs = [communityIdx, nameIdx].filter(i => i >= 0);
+        const freezeCount = anchorIdxs.length ? Math.max(...anchorIdxs) + 1 : 0;
         const freezeClass = (i) => {
-            if (i === communityIdx) return 'freeze-1';
-            if (i === nameIdx) return 'freeze-2';
-            return '';
+            if (i >= freezeCount) return '';
+            return i === freezeCount - 1 ? 'freeze-col freeze-col-last' : 'freeze-col';
         };
 
         // 构建表头：工资表原始列 + 邮箱列 + 发件人邮箱 + 发送时间 + 操作
@@ -4662,12 +4664,19 @@ async function showImportDetail(importId) {
                 cell.addEventListener('dblclick', () => startEmailEdit(cell));
             });
 
-            // 根据第一列实际宽度设置第二列的 left 偏移
+            // 冻结列的 left 必须按物理列顺序逐个累加实测宽度（渲染后才能测量）
             requestAnimationFrame(() => {
                 const wrap = $('#import-detail-wrap');
-                const firstTh = wrap && wrap.querySelector('thead th.freeze-1');
-                if (firstTh) {
-                    wrap.style.setProperty('--freeze-1-width', firstTh.offsetWidth + 'px');
+                if (!wrap || !freezeCount) return;
+                const headerCells = wrap.querySelectorAll('thead tr th');
+                const bodyRows = wrap.querySelectorAll('tbody tr');
+                let left = 0;
+                for (let i = 0; i < freezeCount && i < headerCells.length; i++) {
+                    headerCells[i].style.left = left + 'px';
+                    bodyRows.forEach(tr => {
+                        if (tr.children[i]) tr.children[i].style.left = left + 'px';
+                    });
+                    left += headerCells[i].offsetWidth;
                 }
             });
         }

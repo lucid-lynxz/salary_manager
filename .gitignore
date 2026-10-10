@@ -12,5 +12,6 @@ app.log
 .DS_Store
 *.xlsx
 .idea
+.workbuddy
 .encryption_key
 user_config.json
