@@ -231,6 +231,13 @@ function renderTable(tableEl, rows, startRow, headerRows, rowIndices, pagination
     rowIndices = rowIndices || [];
     pagination = pagination || null;
     freezeCols = freezeCols || []; // 0-based 数据列索引数组，按从左到右冻结顺序排列
+    // sticky 冻结列必须从最左数据列起连续（同 Excel：不能跳过中间列），
+    // 否则未冻结的左侧列（如「序号」）会与钉住的列重叠，横滚时出现内容穿插/裁切。
+    // 故把冻结集合扩展为 [0 .. 最大冻结索引] 的连续前缀。
+    if (freezeCols.length) {
+        const maxFreeze = Math.max(...freezeCols);
+        freezeCols = Array.from({ length: maxFreeze + 1 }, (_, i) => i);
+    }
     // 根据 rowIndices 定位最后一个表头行的位置，兼容跳过行后的行偏移
     const headerCount = (() => {
         if (!headerRows.length) return 1;
