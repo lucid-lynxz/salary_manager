@@ -3294,7 +3294,9 @@ def api_package_project():
     zip_path = packages_dir / f"salary_manager_{timestamp}{suffix}.zip"
 
     exclude_dirs = {"__pycache__", "logs", ".git", "packages", ".idea", ".aicoding-chat-workspace", "uploads", "exports", "venv", ".venv", "assets"}
-    exclude_files = {".DS_Store", "Thumbs.db", ".app.pid"}
+    # .encryption_key 是解密发件人 SMTP 授权码的本机密钥，user_config.json 是本机个性化布局配置，
+    # 都不能随 zip 分发到别的机器
+    exclude_files = {".DS_Store", "Thumbs.db", ".app.pid", ".encryption_key", "user_config.json"}
     if include_db:
         exclude_suffixes = (".db-wal", ".db-shm", ".log")
     else:
