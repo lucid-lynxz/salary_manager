@@ -332,7 +332,7 @@ SALARY_DEBUG=1 ./start.sh      # 或 SALARY_DEBUG=1 python app.py
 | `templates/index.html` | 单页 Web 界面，含导入数据、人员查询、导入历史、发件人管理四个标签页 |
 | `static/css/style.css` | 界面样式（含浅色/深色主题） |
 | `static/js/app.js` | 前端交互逻辑：导入向导（含跳过邮箱表、一键查找历史邮箱）、解析预览、搜索、导入历史、导出、批量发送邮件、主题切换 |
-| `requirements.txt` | Python 依赖版本区间（非严格锁定）：Flask、pandas、openpyxl、python-dateutil、cryptography（邮箱密码加解密），详见 2.8 节 |
+| `requirements.txt` | Python 依赖版本区间（非严格锁定）：Flask、pandas、openpyxl、python-dateutil、cryptography（邮箱密码加解密）、xlrd（读取老式 .xls），详见 2.8 节 |
 | `start.sh` | 一键启动脚本：自动检测并清理端口占用、创建虚拟环境、安装依赖、后台启动服务、轮询端口最多 10 秒判断启动结果、自动打开浏览器 |
 | `smoke_low_deps.py` | 依赖下限兼容性冒烟测试，详见 2.8 节；输出 `SMOKE OK` 表示主链路可用 |
 | `tests/test_error_handler.py` | 错误兜底与 debug 开关回归用例（无第三方框架依赖），详见 2.9 节 |
