@@ -1,4 +1,20 @@
-flask==3.0.3
-pandas==2.2.2
-openpyxl==3.1.5
-python-dateutil==2.9.0
+# ---------------------------------------------------------------------------
+# 依赖版本策略：只约束「下限 + 跨大版本上限」，不锁死小版本。
+# pip 会依据每个发行包的 Requires-Python 元数据自动回退，因此同一份清单可以
+# 同时适配老 Python（银河麒麟）和新 Python（macOS / Windows / 麒麟 SP3+）。
+#
+#   银河麒麟桌面版 V10 SP1（预装 Python 3.8，需 sudo apt install python3-pip python3-venv）
+#     → flask 3.0.3 / pandas 2.0.3 / openpyxl 3.1.5 / cryptography 46.0.0 / numpy 1.24.4
+#   Python 3.11 ~ 3.13
+#     → flask 3.1.3 / pandas 2.3.2 / openpyxl 3.1.5 / cryptography 50.0.2 / numpy 2.2.6
+#   （以上为 pip --dry-run 在对应 Requires-Python 约束下的实际解析结果）
+#
+# 上限的作用只是挡住尚未适配的大版本：pandas 3.x 要求 Python >= 3.11 且删除了
+# 大量旧 API，flask 4 / openpyxl 4 同理。cryptography 不设上限：其版本号按月
+# 递增（46→47→48…），设上限只会频繁失效，而本工具用到的 Fernet 接口自 2.x 起稳定。
+# ---------------------------------------------------------------------------
+flask>=2.2,<4
+pandas>=2.0,<3
+openpyxl>=3.1,<4
+python-dateutil>=2.8,<3
+cryptography>=3.4

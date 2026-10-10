@@ -17,6 +17,7 @@ from functools import wraps
 import pandas as pd
 from dateutil import parser as date_parser
 from flask import Flask, request, jsonify, render_template, send_from_directory, send_file
+from werkzeug.exceptions import HTTPException
 from cryptography.fernet import Fernet
 
 app = Flask(__name__)
@@ -3324,7 +3325,7 @@ def api_package_project():
                 info.compress_type = zipfile.ZIP_DEFLATED
                 # Windows 下生成的 zip 不带 Unix 执行位，显式给 shell 脚本加 +x，
                 # 否则在银河麒麟等 Linux 上解压后无法直接 ./start.sh 运行
-                info.external_attr = (0o777 if path.suffix == ".sh" else 0o644) << 16
+                info.external_attr = (0o755 if path.suffix == ".sh" else 0o644) << 16
                 # 标记条目为 Unix 来源，否则 Linux 解压时按 FAT 属性忽略权限位
                 info.create_system = 3
                 zf.writestr(info, path.read_bytes())
@@ -3365,6 +3366,49 @@ def api_stop_service():
 
 
 # ---------------------------------------------------------------------------
+# 错误处理
+# ---------------------------------------------------------------------------
+
+@app.errorhandler(500)
+def handle_unhandled_error(err):
+    """未捕获异常兜底：完整堆栈写日志，响应只回一句人话 + 日志定位用的错误号。
+
+    前端 app.js 统一按 `data.error` 弹窗提示，因此这里必须返回 JSON：否则
+    Werkzeug 调试页（debug 模式实测 14KB HTML）会被整段塞进 alert()，非技术用
+    户无法阅读；而且异常原文可能带出文件路径、邮箱账号等敏感信息，本服务监听
+    0.0.0.0，同网段均可访问。
+
+    错误号与堆栈的对应关系靠下面这行日志建立（Flask 自身也会记一条不带错误号的
+    堆栈，宁可重复也不能丢定位能力）。
+    """
+    error_id = uuid.uuid4().hex[:8]
+    app.logger.exception("未处理异常 [error_id=%s]", error_id)
+    return jsonify({
+        "error": f"服务器内部错误（错误号 {error_id}），请把该错误号反馈给维护人员以便在日志中定位",
+        "error_id": error_id,
+    }), 500
+
+
+# 常见 HTTP 错误的中文文案：Werkzeug 默认 description 是英文（如 "The requested URL was
+# not found..."），会被前端直接 alert 给社区用户，读不懂也无法行动。
+_HTTP_ERROR_ZH = {
+    400: "请求内容格式有误，请刷新页面后重试",
+    401: "未授权，请重新打开页面重试",
+    403: "没有访问权限",
+    404: "请求的内容不存在，请刷新页面后重试",
+    405: "请求方式不被支持，请刷新页面后重试",
+    408: "请求超时，请检查网络后重试",
+    413: "上传的文件过大，请拆分后重试",
+}
+
+
+@app.errorhandler(HTTPException)
+def handle_http_error(err):
+    """4xx/5xx HTTP 异常也返回 JSON（中文文案），保持前端错误分支单一（只看 data.error）。"""
+    return jsonify({"error": _HTTP_ERROR_ZH.get(err.code, err.description or err.name)}), err.code
+
+
+# ---------------------------------------------------------------------------
 # Static
 # ---------------------------------------------------------------------------
 
@@ -3373,5 +3417,13 @@ def send_static(path):
     return send_from_directory(BASE_DIR / "static", path)
 
 
+# debug 开关：默认关闭。打开后 Werkzeug 会把完整堆栈与局部变量值直接返回给浏览器，
+# 而服务监听 0.0.0.0，同网段任何人都能看到；同时 debug=True 会额外拉起 reloader 子进程，
+# 并在初始化调试器时创建 System V 信号量，在 IPC 权限受限的环境（部分国产系统/容器）
+# 下可能直接 PermissionError 启动失败。关闭后完整堆栈仍会写入 app.log，排障能力不损失。
+# 开发时需要热重载：SALARY_DEBUG=1 ./start.sh  或  SALARY_DEBUG=1 python app.py
+DEBUG = os.environ.get("SALARY_DEBUG") == "1"
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5000, debug=DEBUG)

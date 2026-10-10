@@ -29,18 +29,21 @@ else
 fi
 
 # 查询占用端口的 PID：优先 lsof，退回 ss（银河麒麟等系统可能未装 lsof）
+# lsof 必须限定 -sTCP:LISTEN，否则会把"连到远端 5000 端口"的客户端进程也算进来
 port_pids() {
     if command -v lsof >/dev/null 2>&1; then
-        lsof -ti :"$PORT" 2>/dev/null || true
+        lsof -nP -tiTCP:"$PORT" -sTCP:LISTEN 2>/dev/null || true
     elif command -v ss >/dev/null 2>&1; then
-        ss -ltnp 2>/dev/null | grep ":$PORT " | sed 's/.*pid=\([0-9]*\).*/\1/' | sort -u || true
+        # 只从含 pid= 的行取值：非本用户进程或内核不支持 -p 时 ss 不输出 pid=，
+        # 用 sed 会把整行当成"pid"交给 kill，导致清理静默失败；一行多个 pid= 时也要全部取到
+        ss -ltnp 2>/dev/null | grep ":$PORT " | grep -o 'pid=[0-9][0-9]*' | cut -d= -f2 | sort -u || true
     fi
 }
 
 # 端口是否处于监听：输出非空表示监听中；输出 unknown 表示缺少检测工具无法判断
 port_listening() {
     if command -v lsof >/dev/null 2>&1; then
-        lsof -i :"$PORT" 2>/dev/null || true
+        lsof -nP -iTCP:"$PORT" -sTCP:LISTEN 2>/dev/null || true
     elif command -v ss >/dev/null 2>&1; then
         ss -ltn 2>/dev/null | grep ":$PORT " || true
     else
@@ -48,14 +51,25 @@ port_listening() {
     fi
 }
 
+# 进程是否存活：Windows 下 Git Bash 的 MSYS ps 与 Windows PID 口径不一致，
+# 容易把已死进程误判为"仍在运行"而提示访问一个打不开的页面，改用 tasklist 按 PID 过滤
+pid_alive() {
+    if [ "$IS_WINDOWS" = "1" ]; then
+        tasklist //FI "PID eq $1" //NH 2>/dev/null | grep -q " $1 "
+    else
+        ps -p "$1" > /dev/null 2>&1
+    fi
+}
+
 # 清理占用端口的遗留进程
 if [ "$IS_WINDOWS" = "1" ]; then
-    # Windows: netstat + taskkill
+    # Windows: netstat + taskkill（/T 递归结束进程树：Flask debug 模式下真正监听端口的是 reloader 子进程，
+    # /F 属硬终止不会触发 werkzeug 的 SIGTERM 清理逻辑，只杀父进程会留下占用 5000 的子进程）
     PIDS_ON_PORT=$(netstat -ano 2>/dev/null | grep ":$PORT " | grep -i LISTENING | awk '{print $5}' | sort -u || true)
     if [ -n "$PIDS_ON_PORT" ]; then
         echo "检测到端口 $PORT 被占用，正在清理遗留进程..."
         for pid in $PIDS_ON_PORT; do
-            taskkill //F //PID "$pid" 2>/dev/null || true
+            taskkill //F //T //PID "$pid" 2>/dev/null || true
         done
         sleep 1
     fi
@@ -70,8 +84,9 @@ fi
 
 # 检查是否已在运行
 if [ -f "$PID_FILE" ]; then
-    PID=$(cat "$PID_FILE")
-    if ps -p "$PID" > /dev/null 2>&1; then
+    # tr -d '\r'：PID 文件若被 Windows 编辑器改过会带 CRLF，残留 \r 会让存活判断与 kill 失效
+    PID=$(tr -d '\r' < "$PID_FILE")
+    if pid_alive "$PID"; then
         echo "服务已在运行中 (PID: $PID)，请访问 http://127.0.0.1:$PORT"
         echo "如需重启，请先运行 ./stop.sh"
         exit 0
@@ -110,22 +125,34 @@ if ! "$VENV_PYTHON" -m pip install -q -r requirements.txt; then
 fi
 
 # 启动服务（后台运行）
+# PYTHONUNBUFFERED: stdout 重定向到文件时默认是块缓冲，不加该变量 Flask 启动横幅会滞留缓冲区，
+# 导致 app.log 看起来"没有日志"，排查启动失败时无信息可看
 echo "正在启动服务..."
-"$VENV_PYTHON" app.py > app.log 2>&1 &
+PYTHONUNBUFFERED=1 "$VENV_PYTHON" app.py > app.log 2>&1 &
 PID=$!
 echo "$PID" > "$PID_FILE"
 
 # 等待服务启动，通过端口监听状态判断（比 ps -p 更可靠，避免 Flask debug reloader PID 不匹配问题）
-sleep 3
-if [ "$IS_WINDOWS" = "1" ]; then
-    PORT_LISTENING=$(netstat -ano 2>/dev/null | grep ":$PORT " | grep -i LISTENING || true)
-else
-    PORT_LISTENING=$(port_listening)
-    # 缺少 lsof/ss 时退回进程存活检查
-    if [ "$PORT_LISTENING" = "unknown" ] && ps -p "$PID" > /dev/null 2>&1; then
-        PORT_LISTENING="alive"
+# 首次导入 pandas/flask 较慢，轮询最多 10 秒，避免误判为启动失败
+WAITED=0
+PORT_LISTENING=""
+while [ "$WAITED" -lt 10 ]; do
+    sleep 1
+    WAITED=$((WAITED + 1))
+    if [ "$IS_WINDOWS" = "1" ]; then
+        PORT_LISTENING=$(netstat -ano 2>/dev/null | grep ":$PORT " | grep -i LISTENING || true)
+    else
+        PORT_LISTENING=$(port_listening)
+        # 缺少 lsof/ss 时退回进程存活检查
+        if [ "$PORT_LISTENING" = "unknown" ] && pid_alive "$PID"; then
+            PORT_LISTENING="alive"
+        fi
     fi
-fi
+    # 注意：此处用 if 而非 "[ ... ] && break"，避免 set -e 下测试失败时脚本直接退出
+    if [ -n "$PORT_LISTENING" ]; then
+        break
+    fi
+done
 if [ -n "$PORT_LISTENING" ]; then
     URL="http://127.0.0.1:$PORT"
     echo "启动成功！正在打开浏览器: $URL"

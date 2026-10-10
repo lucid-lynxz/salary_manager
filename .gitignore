@@ -12,3 +12,5 @@ app.log
 .DS_Store
 *.xlsx
 .idea
+.encryption_key
+user_config.json

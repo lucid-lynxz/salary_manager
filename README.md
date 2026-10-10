@@ -123,6 +123,8 @@ cd /path/to/salary_manager
 启动成功！正在打开浏览器: http://127.0.0.1:5000
 ```
 
+> **启动失败排查**：脚本以后台方式启动 `app.py`，标准输出/错误重定向到 `app.log`，失败时会打印日志末尾 20 行。常见原因是依赖缺失（如 `ModuleNotFoundError: No module named 'cryptography'`，邮箱密码加解密依赖该库），执行 `venv/bin/python -m pip install -r requirements.txt` 补齐即可。脚本启动时以 `PYTHONUNBUFFERED=1` 运行服务（重定向到文件的 stdout 默认是块缓冲，不关闭缓冲时 Flask 启动横幅会滞留缓冲区，导致 `app.log` 看起来没有内容），并轮询端口监听状态最多 10 秒，避免首次导入 pandas/flask 较慢时被误判为启动失败。
+
 停止服务：
 
 ```bash
@@ -141,6 +143,14 @@ python app.py
 ```
 
 首次运行会自动创建 `salary.db` 数据库和 `uploads/` 上传目录。
+
+开发时需要代码热重载（改 `app.py` / 模板自动重启），用 `SALARY_DEBUG=1` 开启 debug 模式：
+
+```bash
+SALARY_DEBUG=1 ./start.sh      # 或 SALARY_DEBUG=1 python app.py
+```
+
+> 该变量只影响当前这次启动，不会写入任何文件；不设时默认 `debug=False`，详见四、注意事项。
 
 ### 2.3 导入数据
 
@@ -204,11 +214,59 @@ python app.py
 
 - **主题**：支持“跟随系统 / 浅色 / 深色”三种模式，默认“跟随系统”，选择后自动保存到浏览器本地。
 - **打开项目**：使用系统默认方式打开项目所在目录。
-- **打包项目**：将项目打包为 zip 并打开 `packages/` 目录，支持三种模式：
-  - **仅代码**：不包含数据库和运行环境，体积最小。
+- **打包项目**：将项目打包为 zip 并打开 `packages/` 目录，支持两种模式：
+  - **仅代码**：不包含数据库，体积最小。
   - **带数据库文件**：包含 `salary.db`，方便迁移数据。
-  - **带运行环境**：包含代码、数据库和 `venv/`，但**不能保证跨平台运行**（venv 与创建时的操作系统、Python 路径强相关）。
+  - 两种模式都会排除 `venv/`、`uploads/`、`exports/`、`app.log`、`.app.pid` 等目录与文件，**运行环境不随包分发**；换机器后执行 `./start.sh` 会按新机器的 Python 版本重新创建虚拟环境并安装依赖。
 - **停止服务**：调用 `stop.sh` 停止当前 Flask 服务。
+
+### 2.8 跨平台部署要点（银河麒麟 V10 SP1 / Windows）
+
+`requirements.txt` 不锁死小版本，只约束「下限 + 跨大版本上限」（如 `pandas>=2.0,<3`）。这样做的依据是：pip 会读取每个发行包的 `Requires-Python` 元数据自动回退，因此**同一份清单可以同时适配老 Python 和新 Python**，无需为不同操作系统维护多份依赖文件。上限只用于挡住尚未适配的大版本（pandas 3.x 要求 Python >= 3.11 且删除了大量旧 API）。
+
+实测解析结果（`pip install --dry-run` 按目标平台与 Python 版本求解）：
+
+| 目标环境 | 实际解析到的版本 |
+|---|---|
+| 银河麒麟 V10 SP1（Python 3.8, x86_64 兆芯/海光） | Flask 3.0.3 / pandas 2.0.3 / openpyxl 3.1.5 / cryptography 46.0.0 / numpy 1.24.4 |
+| 银河麒麟 V10 SP1（Python 3.8, aarch64 飞腾/鲲鹏） | 同上，全部有预编译 wheel |
+| Python 3.13（macOS / Windows / 麒麟 SP3+） | Flask 3.1.3 / pandas 2.3.2 / openpyxl 3.1.5 / cryptography 50.0.2 / numpy 2.2.6 |
+
+部署注意事项：
+
+- **麒麟 V10 SP1 桌面版**：预装 Python 3.8 但通常不带 pip，需先执行 `sudo apt install python3-pip python3-venv`；`start.sh` 会在缺少 `python3` / `python3-venv` 时给出该提示并退出。
+- **CPU 架构限制**：`pandas` / `cryptography` 的官方 wheel 只覆盖 x86_64 与 aarch64（另有 ppc64le/armv7l）。**龙芯（mips64el / loongarch64）、申威（sw_64）上无 wheel 可装**，实测 pip 直接报 `No matching distribution found`；这类机器需自行编译（`cryptography` 需 Rust 工具链 + OpenSSL 开发包）或改用 Python >= 3.9 的自编环境。
+- **内网离线部署**：在能联网的同架构机器上预下载 wheel，再随项目一起拷贝：
+
+  ```bash
+  pip download -d wheels/ -r requirements.txt \
+      --only-binary=:all: --platform manylinux2014_aarch64 --python-version 3.8
+  # 目标机上：venv/bin/python -m pip install --no-index --find-links wheels/ -r requirements.txt
+  ```
+
+- **Windows**：必须在 **Git Bash** 中执行 `./start.sh`（PowerShell / CMD 无法运行 bash 脚本），且需 **64 位 Python 3.9+**（win32 无 pandas/cryptography wheel）。脚本用 `netstat + taskkill /F /T` 清理与停止进程，`/T` 用于递归结束 Flask debug 模式的 reloader 子进程，避免只杀父进程留下占用 5000 端口的子进程。
+- **端口与进程检测口径**（`start.sh` / `stop.sh` 共同遵守）：
+  - 优先 `lsof -nP -iTCP:5000 -sTCP:LISTEN`，限定 LISTEN 才不会把「连到远端 5000 的客户端进程」误判为占用者；
+  - 无 `lsof` 时退回 `ss -ltnp`，并用 `grep -o 'pid=[0-9]\+'` 只取真实 PID（老写法用 `sed` 在 `ss` 拿不到进程信息时会把整行当成 PID 交给 `kill`，导致清理静默失败、进而表现为「启动失败」）；
+  - 两者都没有时退回进程存活检查（Unix 用 `ps -p`，Windows 用 `tasklist //FI "PID eq <pid>"`，因为 Git Bash 的 MSYS `ps` 与 Windows PID 口径不一致）；
+  - 读取 `.app.pid` 时统一 `tr -d '\r'`，兼容被 Windows 编辑器改过的 CRLF 文件。
+- **兼容性冒烟测试**：`smoke_low_deps.py` 用于验证「依赖下限组合」与当前环境行为一致，覆盖读表→表头识别→列映射→记录解析→导出→密码加解密全链路。用法：先 `python generate_large_test_data.py 2025 4 20` 生成 `assets/` 测试表，再在目标 venv 里执行 `python smoke_low_deps.py`。已实测两组结果逐项一致：
+  - 下限组合（Python 3.9 + pandas 2.0.3 + flask 2.2.5 + openpyxl 3.1.0 + numpy 1.26.4）
+  - 当前环境（Python 3.13 + pandas 2.2.2 + flask 3.0.3 + numpy 2.5.3）
+- **重复执行 `start.sh` 等于重启**：脚本在检查 PID 文件之前就会先清理 5000 端口上的遗留进程，因此再次运行不会提示「服务已在运行中」而是直接换新进程启动（数据存于 `salary.db`，不会丢失）。
+
+### 2.9 自检与回归
+
+项目不依赖任何测试框架，两个自检脚本都用裸 assert + 退出码约定（0 为全部通过，1 为有失败）：
+
+| 脚本 | 用途 | 跑法 |
+|------|------|------|
+| `tests/test_error_handler.py` | 错误兜底与 debug 开关回归（共 6 个用例）：默认 `debug=False`、`SALARY_DEBUG=1` 才开启；500/4xx 必须返回 JSON 且响应体不得出现 Traceback、异常类型或局部变量值；`error_id` 能在日志里定位到完整堆栈；正常页面不受兜底处理器影响 | `venv/bin/python tests/test_error_handler.py` |
+| `smoke_low_deps.py` | 依赖下限兼容性冒烟，验证麒麟老 Python 解析到的旧版本能跑通主链路，详见 2.8 节 | `venv/bin/python smoke_low_deps.py` |
+
+改动 `app.py` 的错误返回、`requirements.txt` 版本区间或 `start.sh` 启停逻辑后，建议先跑一遍这两个脚本。
+
+> 用例故意触发一次 500 来验证兜底，因此会在 `app.logger` 上产生错误日志；脚本已移除 Flask 默认的 stderr handler 并临时提升日志级别，所以终端输出保持干净（只打 `PASS`/`FAIL`）。用例只读项目状态，不会修改 `salary.db` 与 `user_config.json`（已用 md5 比对验证）。
 
 ---
 
@@ -256,6 +314,8 @@ python app.py
 ## 四、注意事项
 
 - 本工具使用 Flask 内置开发服务器，适合本地办公场景。如需多人长期使用，建议部署到正式 WSGI 服务器（如 Gunicorn）。
+- **debug 模式默认关闭**（`app.py` 末尾的 `DEBUG = os.environ.get("SALARY_DEBUG") == "1"`）。因为服务监听 `0.0.0.0`（同网段均可访问），而 `debug=True` 会把完整堆栈和**局部变量值**直接返回给浏览器（实测单个错误响应 14KB HTML，含异常现场变量），存在敏感信息泄露风险；同时它会额外拉起一个 reloader 子进程（导致启停需区分进程树），并在初始化调试器时创建 System V 信号量，在 IPC 权限受限的环境（部分国产系统/容器）下可能偶发 `PermissionError: [Errno 1] Operation not permitted` 导致启动失败。关闭后**排障能力不损失**：完整堆栈仍会写入 `app.log`。开发时需热重载请用 `SALARY_DEBUG=1 ./start.sh`（实测：默认启动监听端口的 PID 为 1 个，开启后为 2 个且日志出现 reloader 横幅）。
+- **错误提示统一为 JSON + 中文文案**：`app.py` 注册了 `@app.errorhandler(500)` 与 `@app.errorhandler(HTTPException)`。前端 `app.js` 统一读 `data.error` 弹窗，因此未捕获异常不再返回 HTML 调试页（实测响应体从 14365 字节降到 248 字节）。用户看到的是“服务器内部错误（错误号 xxxxxxxx）”，**维护人员拿该错误号在 `app.log` 里检索即可定位完整堆栈**（`grep -A 30 error_id=xxxxxxxx app.log`）；4xx 错误也映射为中文提示（如“请求的内容不存在，请刷新页面后重试”）而不是 Werkzeug 默认英文。
 - `uploads/`、`exports/` 和 `salary.db` 已加入 `.gitignore`，不会被提交到 git。
 - `sender_emails` 表中保存了发件人 SMTP 授权码，仅存于本地 `salary.db`，打包“带数据库文件”时请注意保密。
 - `*.xlsx`（含 `assets/` 下的示例和测试文件）已加入 `.gitignore`，不会被提交。需要时可通过 `generate_test_data.py` 或 `generate_large_test_data.py` 重新生成。
@@ -268,13 +328,15 @@ python app.py
 
 | 文件 | 说明 |
 |------|------|
-| `app.py` | Flask 后端，包含数据库初始化、Excel 解析、邮箱校验、合并导入、查询 API |
+| `app.py` | Flask 后端，包含数据库初始化、Excel 解析、邮箱校验、合并导入、查询 API、错误兜底（500/HTTPException 统一返回 JSON）、`SALARY_DEBUG` 调试开关 |
 | `templates/index.html` | 单页 Web 界面，含导入数据、人员查询、导入历史、发件人管理四个标签页 |
 | `static/css/style.css` | 界面样式（含浅色/深色主题） |
 | `static/js/app.js` | 前端交互逻辑：导入向导（含跳过邮箱表、一键查找历史邮箱）、解析预览、搜索、导入历史、导出、批量发送邮件、主题切换 |
-| `requirements.txt` | Python 依赖：Flask、pandas、openpyxl、python-dateutil |
-| `start.sh` | 一键启动脚本：自动检测并清理端口占用、创建虚拟环境、安装依赖、后台启动服务、自动打开浏览器 |
-| `stop.sh` | 一键停止脚本：读取 PID 文件并停止服务 |
+| `requirements.txt` | Python 依赖版本区间（非严格锁定）：Flask、pandas、openpyxl、python-dateutil、cryptography（邮箱密码加解密），详见 2.8 节 |
+| `start.sh` | 一键启动脚本：自动检测并清理端口占用、创建虚拟环境、安装依赖、后台启动服务、轮询端口最多 10 秒判断启动结果、自动打开浏览器 |
+| `smoke_low_deps.py` | 依赖下限兼容性冒烟测试，详见 2.8 节；输出 `SMOKE OK` 表示主链路可用 |
+| `tests/test_error_handler.py` | 错误兜底与 debug 开关回归用例（无第三方框架依赖），详见 2.9 节 |
+| `stop.sh` | 一键停止脚本：优先按 PID 文件停止，失效时按端口兜底查找并停止，停止后复查端口是否真已释放 |
 | `assets/` | 示例 Excel 文件（已被 .gitignore 忽略，不入库） |
 | `generate_test_data.py` | 基于现有模板批量生成多月份工资表+邮箱表测试数据 |
 | `generate_large_test_data.py` | 生成 200 条左右的工资表+邮箱表测试数据，用于长表格/分页/冻结效果测试。用法：`python generate_large_test_data.py [年] [月] [人数]`，默认 2025 年 4 月 200 人。生成的文件位于 `assets/` 目录。 |
